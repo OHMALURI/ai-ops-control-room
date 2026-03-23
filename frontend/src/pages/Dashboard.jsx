@@ -57,7 +57,7 @@ const ServiceCard = ({ service }) => {
 
   // Metrics Logic
   const qualityScore = latestEval ? `${latestEval.quality_score.toFixed(1)}%` : "No data";
-  const latency = "Run test first";
+  const latency = latestEval && latestEval.latency_ms ? `${latestEval.latency_ms}ms` : "No data";
   
   // Calculate percentage of evaluations where score is below 50
   let errorRate = "0%";
