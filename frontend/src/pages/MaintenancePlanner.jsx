@@ -39,7 +39,7 @@ export default function MaintenancePlanner() {
     
     setIsSubmitting(true);
     try {
-      // Step 1: Initialize Database Model 
+      // Step 1: Initialize Database Model
       const createPayload = {
         incident_id: parseInt(formData.incident_id),
         risk_level: formData.risk_level,
@@ -47,26 +47,29 @@ export default function MaintenancePlanner() {
         validation_steps: formData.validation_steps,
         approved: false  // Standard explicit creation mapping defaults false
       };
-      
-      const createRes = await api.post('/maintenance', createPayload);
-      const newPlan = createRes.data;
-      
-      // Step 2: Inject Date Schedule mapping
-      if (formData.next_eval_date) {
+
+      const createRes = await api.post('/maintenance/', createPayload);
+      console.log('[MaintenancePlanner] POST /maintenance/ response:', createRes.data);
+
+      // Safely extract id — backend may return the object directly or wrapped in an array
+      const planId = createRes.data?.id ?? createRes.data?.[0]?.id;
+
+      // Step 2: Inject Date Schedule mapping (only when we have a valid id)
+      if (formData.next_eval_date && planId) {
         // Enforce ISO string to strictly map Python datetime.fromisoformat requirements
         const formattedDate = new Date(formData.next_eval_date).toISOString();
-        await api.put(`/maintenance/${newPlan.id}/schedule`, {
-          next_eval_date: formattedDate
-        });
-        
-        // As a shortcut, if I checked "I have reviewed this plan and approve it",
-        // we can also auto-approve it, or just let the button in the list handle it.
-        // The prompt says "submit button disabled until approval checkbox is checked."
-        // We will formally approve the plan instantly here given the explicit strictness
-        // of the boolean confirmation requirement
-        await api.put(`/maintenance/${newPlan.id}/approve`);
+        try {
+          await api.put(`/maintenance/${planId}/schedule`, {
+            next_eval_date: formattedDate
+          });
+          await api.put(`/maintenance/${planId}/approve`);
+        } catch (scheduleErr) {
+          console.error('[MaintenancePlanner] Schedule/approve step failed:', scheduleErr);
+        }
+      } else if (formData.next_eval_date && !planId) {
+        console.warn('[MaintenancePlanner] Skipping schedule — planId is missing:', planId);
       }
-      
+
       // Empty mapping variables
       setFormData({
         incident_id: '',
@@ -76,12 +79,11 @@ export default function MaintenancePlanner() {
         next_eval_date: '',
         approvalChecked: false
       });
-      
-      await fetchData();
     } catch (err) {
-      console.error("Error initializing plan workflow:", err);
-      alert("Failed to lock maintenance plan variables");
+      console.error('[MaintenancePlanner] Error initializing plan workflow:', err);
     } finally {
+      // Always refresh the list regardless of schedule success/failure
+      await fetchData();
       setIsSubmitting(false);
     }
   };

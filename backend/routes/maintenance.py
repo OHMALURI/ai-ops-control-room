@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from datetime import datetime
 
 # Handle relative vs absolute imports functionally dependent on execution directory
 try:
@@ -25,14 +26,26 @@ class MaintenanceCreate(BaseModel):
     validation_steps: str
     approved: bool = False
 
+class MaintenanceOut(BaseModel):
+    id: int
+    incident_id: int
+    risk_level: str
+    rollback_plan: str
+    validation_steps: str
+    approved: bool
+    next_eval_date: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
 class ScheduleUpdate(BaseModel):
     next_eval_date: str
 
 
 # --- Routes ---
 
-@router.post("")
-@router.post("/")
+@router.post("", response_model=MaintenanceOut)
+@router.post("/", response_model=MaintenanceOut)
 def create_maintenance_plan(plan_data: MaintenanceCreate, db: Session = Depends(get_db)):
     """Create a maintenance plan, save to DB, and return it."""
     # Instantiate ORM model from parsed Pydantic data
