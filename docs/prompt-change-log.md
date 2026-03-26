@@ -321,3 +321,146 @@ test_get_evaluations_returns_list — POST to /api/services/ to create a service
 
 - Files changed: backend/tests/test_evaluations.py
 - Verified by: pytest tests/ -v — all 7 tests passed in 8.56s
+
+
+
+## Entry #16
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Create incident routes (create, list, get, checklist, generate-summary, approve-summary)
+
+- Prompt used: I am building an AI Operations Control Room using FastAPI + SQLAlchemy + SQLite. Create backend/routes/incidents.py with the following:
+
+Import APIRouter, HTTPException, Depends from fastapi
+Import Session from sqlalchemy.orm
+Import get_db from database.py
+Import Service and Incident from models.py
+Import BaseModel from pydantic, Optional from typing
+Import os, json from standard library
+Import openai and load_dotenv from dotenv
+Create router with prefix="/incidents" tag="Incidents"
+Create IncidentCreate pydantic model with fields: service_id (int), severity (str), symptoms (str), timeline (str)
+Create ChecklistUpdate pydantic model with fields: data_issue (bool), prompt_change (bool), model_update (bool), infrastructure (bool), safety_failure (bool)
+Create SummaryApprove pydantic model with fields: summary_text (str)
+Build these routes:
+
+POST /incidents — create incident, save to DB, return it
+GET /incidents — return all incidents ordered by created_at desc
+GET /incidents/{id} — return single incident or 404
+PUT /incidents/{id}/checklist — save ChecklistUpdate as JSON to checklist_json column, return updated incident
+POST /incidents/{id}/generate-summary — build prompt from incident fields, call OpenAI gpt-4o-mini, return ONLY the draft text — do NOT save anything
+PUT /incidents/{id}/approve-summary — save summary_text to llm_summary column, set approved=True, return updated incident
+
+- Files changed: backend/routes/incidents.py, backend/main.py
+- Verified by: All routes visible in Swagger UI, POST /api/incidents/ returned incident with id=1, status=open, approved=false
+
+
+
+## Entry #17
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Create maintenance plan routes (create, list, get, schedule, approve)
+
+- Prompt used:I am building an AI Operations Control Room using FastAPI + SQLAlchemy + SQLite. Create backend/routes/maintenance.py with the following:
+
+Import APIRouter, HTTPException, Depends from fastapi
+Import Session from sqlalchemy.orm
+Import get_db from database.py
+Import Maintenance from models.py
+Import BaseModel from pydantic, Optional from typing
+Import datetime from datetime
+Create router with prefix="/maintenance" tag="Maintenance"
+Create MaintenanceCreate pydantic model with fields: incident_id (int), risk_level (str), rollback_plan (str), validation_steps (str), approved (bool default False)
+Create ScheduleUpdate pydantic model with field: next_eval_date (str)
+Build these routes:
+
+POST /maintenance — create maintenance plan, save to DB, return it
+GET /maintenance — return all maintenance plans ordered by id desc
+GET /maintenance/{id} — return single plan or 404
+PUT /maintenance/{id}/schedule — parse next_eval_date string to datetime, save to next_eval_date column, return updated plan
+PUT /maintenance/{id}/approve — set approved=True, return updated plan
+  
+- Files changed: backend/routes/maintenance.py, backend/main.py
+- Verified by: Maintenance routes visible in Swagger UI alongside incident routes
+
+
+
+## Entry #18
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Build Incidents frontend page with form, list, checklist, LLM summary and approval
+
+- Prompt used: I am building an AI Operations Control Room using React 18, Axios, and Tailwind CSS. 
+  Create src/pages/Incidents.jsx with the following: Import api from '../api.js'. On page load 
+  fetch GET /services and GET /incidents. Show a Create Incident form at the top with fields: 
+  service (dropdown), severity (select: low/medium/high/critical), symptoms (textarea), timeline 
+  (textarea). Show all incidents in a list. Clicking an incident opens a detail panel with: 
+  troubleshooting checklist with 5 checkboxes (Data issue, Prompt change, Model update, 
+  Infrastructure problem, Safety/policy failure) with Save Checklist button. A Generate Summary 
+  button that calls POST /incidents/{id}/generate-summary and shows draft in editable textarea with 
+  warning banner. An Approve & Save button that calls PUT /incidents/{id}/approve-summary with 
+  confirm dialog.
+
+- Files changed: frontend/src/pages/Incidents.jsx, frontend/src/App.jsx
+- Verified by: Incidents page loads, form creates incidents, checklist saves, LLM generates 
+  summary, approve saves to DB
+
+## Entry #19
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Build Maintenance Planner frontend page with form, approval checkbox, and plans list
+
+- Prompt used: I am building an AI Operations Control Room using React 18, Axios, and Tailwind CSS.
+  Create src/pages/MaintenancePlanner.jsx with the following: Import api from '../api.js'. On page 
+  load fetch GET /incidents and GET /maintenance. Show a Create Maintenance Plan form with fields: 
+  incident (dropdown), risk_level (select: low/medium/high), rollback_plan (textarea), 
+  validation_steps (textarea), next_eval_date (date input), approval checkbox with label "I have 
+  reviewed this plan and approve it for execution". Submit button disabled until approval checkbox 
+  checked. Submitting calls POST /maintenance then PUT /maintenance/{id}/schedule. Show all 
+  maintenance plans in a list with incident_id, risk_level badge, approved status, next_eval_date. 
+  Each plan has an Approve button if not already approved.
+
+- Files changed: frontend/src/pages/MaintenancePlanner.jsx, frontend/src/App.jsx
+- Verified by: Maintenance page loads, form creates plans, submit disabled until checkbox checked, 
+  plans list shows with correct badges
+
+## Entry #20
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Add audit logging to incidents routes
+
+- Prompt used: I have an existing FastAPI routes/incidents.py file. Add audit logging to every 
+  write route. Import AuditLog from models.py. After every successful database write add AuditLog 
+  insert with action names: POST /incidents → action="incident.create", PUT 
+  /incidents/{id}/checklist → action="incident.checklist_update", PUT 
+  /incidents/{id}/approve-summary → action="incident.summary_approved".
+
+- Files changed: backend/routes/incidents.py
+- Verified by: Server restarted with no errors, routes still working
+
+## Entry #21
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Add audit logging to maintenance routes
+
+- Prompt used: I have an existing FastAPI routes/maintenance.py file. Add audit logging to every 
+  write route. Import AuditLog from models.py. Add AuditLog inserts with action names: POST 
+  /maintenance → action="maintenance.create", PUT /maintenance/{id}/schedule → 
+  action="maintenance.schedule_update", PUT /maintenance/{id}/approve → 
+  action="maintenance.approved".
+
+- Files changed: backend/routes/maintenance.py
+- Verified by: Server restarted with no errors
+
+## Entry #22
+- Date: Week 3
+- Tool: Antigravity + Claude Sonnet 4.6
+- Goal: Add audit logging to services routes
+
+- Prompt used: I have an existing FastAPI routes/services.py file. Add audit logging to write 
+  routes. Import AuditLog from models.py. Add AuditLog inserts with action names: POST /services 
+  → action="service.create", PUT /services/{id} → action="service.update", DELETE /services/{id} 
+  → action="service.delete".
+  
+- Files changed: backend/routes/services.py
+- Verified by: Server restarted with no errors, create service writes audit log entry

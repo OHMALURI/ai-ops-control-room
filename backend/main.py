@@ -9,6 +9,9 @@ from models import Service
 from services.evaluator import run_evaluation
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from routes.incidents import router as incidents_router
+from routes.maintenance import router as maintenance_router
+
 app = FastAPI(title="AI Operations Control Room")
 
 app.add_middleware(
@@ -46,3 +49,6 @@ def health_check():
 
 app.include_router(services_router, prefix="/api")
 app.include_router(evaluations_router, prefix="/api")
+
+app.include_router(incidents_router, prefix="/api")
+app.include_router(maintenance_router, prefix="/api")

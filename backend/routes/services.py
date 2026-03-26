@@ -1,6 +1,7 @@
 import os
 import time
 from typing import Optional
+from datetime import datetime
 
 import openai
 from dotenv import load_dotenv
@@ -9,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Service
+from models import Service, AuditLog
 
 load_dotenv()
 
@@ -52,6 +53,15 @@ def create_service(payload: ServiceCreate, db: Session = Depends(get_db)):
     db.add(service)
     db.commit()
     db.refresh(service)
+    audit = AuditLog(
+        user_id=None,
+        action="service.create",
+        resource=f"services/{service.id}",
+        details=f"Service {service.name} created",
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
     return service
 
 
@@ -79,6 +89,15 @@ def update_service(
         setattr(service, field, value)
     db.commit()
     db.refresh(service)
+    audit = AuditLog(
+        user_id=None,
+        action="service.update",
+        resource=f"services/{service_id}",
+        details=f"Service {service.id} updated",
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
     return service
 
 
@@ -87,6 +106,15 @@ def delete_service(service_id: int, db: Session = Depends(get_db)):
     """Delete a service by ID."""
     service = _get_or_404(service_id, db)
     db.delete(service)
+    db.commit()
+    audit = AuditLog(
+        user_id=None,
+        action="service.delete",
+        resource=f"services/{service_id}",
+        details=f"Service {service_id} deleted",
+        timestamp=datetime.utcnow()
+    )
+    db.add(audit)
     db.commit()
     return {"message": "Service deleted"}
 
