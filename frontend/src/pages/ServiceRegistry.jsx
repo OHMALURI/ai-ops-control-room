@@ -17,25 +17,36 @@ export default function ServiceRegistry() {
   const [loading, setLoading] = useState(true);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
+  const fetchServices = async () => {
+    try {
+      const r = await api.get('/services/');
+      setServices(r.data);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    api.get('/services/')
-      .then(r => setServices(r.data))
-      .finally(() => setLoading(false));
+    fetchServices();
   }, []);
 
   // ── Add ────────────────────────────────────────────────────────────────────
   const handleAdd = async (e) => {
     e.preventDefault();
-    const { data } = await api.post('/services/', addForm);
-    setServices(prev => [...prev, data]);
+    await api.post('/services/', addForm);
     setAddForm(EMPTY_FORM);
+    await fetchServices();
   };
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   const handleDelete = async (id) => {
-    await api.delete(`/services/${id}`);
-    setServices(prev => prev.filter(s => s.id !== id));
+    try {
+      await api.delete(`/services/${id}`);
+    } catch (err) {
+      console.error("Failed to delete service:", err);
+    }
     setTestResults(prev => { const n = { ...prev }; delete n[id]; return n; });
+    await fetchServices();
   };
 
   // ── Edit helpers ───────────────────────────────────────────────────────────

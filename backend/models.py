@@ -45,8 +45,8 @@ class Service(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    evaluations = relationship("Evaluation", back_populates="service")
-    incidents = relationship("Incident", back_populates="service")
+    evaluations = relationship("Evaluation", back_populates="service", cascade="all, delete-orphan")
+    incidents = relationship("Incident", back_populates="service", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Service id={self.id} name={self.name!r} environment={self.environment!r}>"
@@ -89,7 +89,7 @@ class Incident(Base):
 
     # Relationships
     service = relationship("Service", back_populates="incidents")
-    maintenance_records = relationship("Maintenance", back_populates="incident")
+    maintenance_records = relationship("Maintenance", back_populates="incident", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return (
