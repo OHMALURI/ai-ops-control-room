@@ -19,6 +19,7 @@ def run_evaluation(service, db):
     try:
         # Create an OpenAI client using the environment variable
         client = openai.OpenAI(api_key=os.environ.get("OPENAI_KEY"))
+        start = time.time()
         
         checks_passed = 0
         check_results_data = {}
@@ -84,7 +85,8 @@ def run_evaluation(service, db):
             quality_score=quality_score,
             check_results=json.dumps(check_results_data),
             drift_triggered=drift_triggered,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.utcnow(),
+            latency_ms=int((time.time() - start) * 1000)
         )
         
     except Exception as e:

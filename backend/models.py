@@ -61,6 +61,7 @@ class Evaluation(Base):
     quality_score = Column(Float, nullable=False)
     check_results = Column(String, nullable=False)   # JSON stored as string
     drift_triggered = Column(Boolean, default=False, nullable=False)
+    latency_ms = Column(Integer, nullable=True)
 
     # Relationship
     service = relationship("Service", back_populates="evaluations")
