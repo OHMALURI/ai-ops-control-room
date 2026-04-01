@@ -15,6 +15,8 @@ export default function ServiceRegistry() {
   const [editState, setEditState] = useState({}); // { [id]: formValues }
   const [testResults, setTestResults] = useState({}); // { [id]: { success, latency_ms } }
   const [loading, setLoading] = useState(true);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchServices = async () => {
@@ -26,8 +28,21 @@ export default function ServiceRegistry() {
     }
   };
 
+  const fetchModels = async () => {
+    try {
+      setModelsLoading(true);
+      const r = await api.get('/services/available-models');
+      setAvailableModels(r.data);
+    } catch (err) {
+      console.error("Failed to fetch models", err);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchServices();
+    fetchModels();
   }, []);
 
   // ── Add ────────────────────────────────────────────────────────────────────
@@ -132,13 +147,32 @@ export default function ServiceRegistry() {
             <option value="dev">dev</option>
             <option value="prod">prod</option>
           </select>
-          <input
-            className={inp}
-            placeholder="Model name"
+          <select
+            className={`${inp} ${modelsLoading ? 'bg-gray-100 animate-pulse' : ''}`}
             value={addForm.model_name}
             onChange={e => setAddForm(p => ({ ...p, model_name: e.target.value }))}
             required
-          />
+            disabled={modelsLoading}
+          >
+            <option value="" disabled>
+              {modelsLoading ? 'Loading models...' : 'Select a model'}
+            </option>
+            {availableModels.map(m => {
+              const label =
+                m.reason === 'invalid_key' ? ' ⚠ Invalid Key' :
+                m.reason === 'no_key' ? ' ⚠ No Key Set' :
+                m.reason === 'unresponsive' ? ' ✗ Unresponsive' : '';
+              return (
+                <option
+                  key={m.id}
+                  value={m.id}
+                  className={!m.responsive ? 'text-red-600 font-semibold bg-red-50' : ''}
+                >
+                  {m.id}{label}
+                </option>
+              );
+            })}
+          </select>
           <select
             className={inp}
             value={addForm.data_sensitivity}
@@ -197,8 +231,28 @@ export default function ServiceRegistry() {
                           </select>
                         </td>
                         <td className="px-4 py-2">
-                          <input className={inp} value={ef.model_name}
-                            onChange={e => handleEditChange(service.id, 'model_name', e.target.value)} />
+                          <select 
+                            className={`${inp} min-w-[140px]`} 
+                            value={ef.model_name}
+                            onChange={e => handleEditChange(service.id, 'model_name', e.target.value)}
+                          >
+                            <option value={ef.model_name}>{ef.model_name}</option>
+                            {availableModels.filter(m => m.id !== ef.model_name).map(m => {
+                              const label =
+                                m.reason === 'invalid_key' ? ' ⚠ Invalid Key' :
+                                m.reason === 'no_key' ? ' ⚠ No Key Set' :
+                                m.reason === 'unresponsive' ? ' ✗ Unresponsive' : '';
+                              return (
+                                <option
+                                  key={m.id}
+                                  value={m.id}
+                                  className={!m.responsive ? 'text-red-600 font-semibold bg-red-50' : ''}
+                                >
+                                  {m.id}{label}
+                                </option>
+                              );
+                            })}
+                          </select>
                         </td>
                         <td className="px-4 py-2">
                           <select className={inp} value={ef.data_sensitivity}
