@@ -160,13 +160,13 @@ export default function ServiceRegistry() {
             {availableModels.map(m => {
               const label =
                 m.reason === 'invalid_key' ? ' ⚠ Invalid Key' :
-                m.reason === 'no_key' ? ' ⚠ No Key Set' :
-                m.reason === 'unresponsive' ? ' ✗ Unresponsive' : '';
+                m.reason === 'no_key' ? ' ⚠ No Key Set' : '';
+              const isError = !m.responsive && m.reason !== 'unresponsive';
               return (
                 <option
                   key={m.id}
                   value={m.id}
-                  className={!m.responsive ? 'text-red-600 font-semibold bg-red-50' : ''}
+                  className={isError ? 'text-red-600 font-semibold bg-red-50' : ''}
                 >
                   {m.id}{label}
                 </option>
@@ -240,13 +240,13 @@ export default function ServiceRegistry() {
                             {availableModels.filter(m => m.id !== ef.model_name).map(m => {
                               const label =
                                 m.reason === 'invalid_key' ? ' ⚠ Invalid Key' :
-                                m.reason === 'no_key' ? ' ⚠ No Key Set' :
-                                m.reason === 'unresponsive' ? ' ✗ Unresponsive' : '';
+                                m.reason === 'no_key' ? ' ⚠ No Key Set' : '';
+                              const isError = !m.responsive && m.reason !== 'unresponsive';
                               return (
                                 <option
                                   key={m.id}
                                   value={m.id}
-                                  className={!m.responsive ? 'text-red-600 font-semibold bg-red-50' : ''}
+                                  className={isError ? 'text-red-600 font-semibold bg-red-50' : ''}
                                 >
                                   {m.id}{label}
                                 </option>

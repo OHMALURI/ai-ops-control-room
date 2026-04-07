@@ -47,6 +47,7 @@ class Service(Base):
     # Relationships
     evaluations = relationship("Evaluation", back_populates="service", cascade="all, delete-orphan")
     incidents = relationship("Incident", back_populates="service", cascade="all, delete-orphan")
+    drift_judge_results = relationship("DriftJudgeResult", back_populates="service", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Service id={self.id} name={self.name!r} environment={self.environment!r}>"
@@ -58,10 +59,18 @@ class Evaluation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    quality_score = Column(Float, nullable=False)
-    check_results = Column(String, nullable=False)   # JSON stored as string
+    quality_score = Column(Float, nullable=False)          # overall average
+    check_results = Column(String, nullable=False)          # JSON stored as string
     drift_triggered = Column(Boolean, default=False, nullable=False)
     latency_ms = Column(Integer, nullable=True)
+    dataset_type = Column(String, nullable=True)            # which golden dataset was used
+
+    # Evaluation metrics (0-100)
+    accuracy             = Column(Float, nullable=True)
+    relevance_score      = Column(Float, nullable=True)
+    factuality_score     = Column(Float, nullable=True)
+    toxicity_score       = Column(Float, nullable=True)
+    instruction_following= Column(Float, nullable=True)
 
     # Relationship
     service = relationship("Service", back_populates="evaluations")
@@ -69,8 +78,9 @@ class Evaluation(Base):
     def __repr__(self) -> str:
         return (
             f"<Evaluation id={self.id} service_id={self.service_id} "
-            f"quality_score={self.quality_score} drift_triggered={self.drift_triggered}>"
+            f"dataset_type={self.dataset_type} quality_score={self.quality_score}>"
         )
+
 
 
 class Incident(Base):
@@ -136,4 +146,31 @@ class AuditLog(Base):
         return (
             f"<AuditLog id={self.id} user_id={self.user_id} "
             f"action={self.action!r} resource={self.resource!r}>"
+        )
+
+
+class DriftJudgeResult(Base):
+    __tablename__ = "drift_judge_results"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    service_id      = Column(Integer, ForeignKey("services.id"), nullable=False)
+    timestamp       = Column(DateTime, default=datetime.utcnow, nullable=False)
+    judge_model     = Column(String, nullable=False)
+    tools_used      = Column(String, nullable=False)   # JSON array as string
+    baseline_samples= Column(String, nullable=False)
+    live_samples    = Column(String, nullable=False)
+    drift_detected  = Column(String, nullable=False)   # "Major"|"Minor"|"None"
+    shift_type      = Column(String, nullable=False)
+    top_new_keyword = Column(String, nullable=True)
+    severity_score  = Column(Integer, nullable=False)
+    short_reason    = Column(String, nullable=True)
+    raw_response    = Column(String, nullable=True)    # full LLM JSON string
+
+    # Relationship
+    service = relationship("Service", back_populates="drift_judge_results")
+
+    def __repr__(self) -> str:
+        return (
+            f"<DriftJudgeResult id={self.id} service_id={self.service_id} "
+            f"drift_detected={self.drift_detected!r} judge_model={self.judge_model!r}>"
         )

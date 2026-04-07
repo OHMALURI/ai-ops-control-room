@@ -64,7 +64,13 @@ def create_maintenance_plan(plan_data: MaintenanceCreate, db: Session = Depends(
         user_id=None,
         action="maintenance.create",
         resource=f"maintenance/{new_plan.id}",
-        details=f"Maintenance plan created with risk level {new_plan.risk_level}",
+        details=(
+            f"Maintenance plan #{new_plan.id} created | "
+            f"Incident: #{new_plan.incident_id} | "
+            f"Risk: {new_plan.risk_level.upper()} | "
+            f"Rollback: {new_plan.rollback_plan[:100]}{'...' if len(new_plan.rollback_plan) > 100 else ''} | "
+            f"Validation: {new_plan.validation_steps[:100]}{'...' if len(new_plan.validation_steps) > 100 else ''}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -111,7 +117,10 @@ def update_maintenance_schedule(plan_id: int, schedule: ScheduleUpdate, db: Sess
         user_id=None,
         action="maintenance.schedule_update",
         resource=f"maintenance/{plan_id}",
-        details=f"Schedule updated for maintenance plan {plan_id}",
+        details=(
+            f"Maintenance plan #{plan_id} schedule updated | "
+            f"Next evaluation: {parsed_datetime.strftime('%Y-%m-%d %H:%M UTC')}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -134,7 +143,10 @@ def approve_maintenance_plan(plan_id: int, db: Session = Depends(get_db)):
         user_id=None,
         action="maintenance.approved",
         resource=f"maintenance/{plan_id}",
-        details=f"Maintenance plan {plan_id} approved",
+        details=(
+            f"Maintenance plan #{plan_id} approved | "
+            f"Incident: #{plan.incident_id} | Risk: {plan.risk_level.upper()}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)

@@ -8,6 +8,7 @@ import AuditLog from './pages/AuditLog';
 import DataPolicy from './pages/DataPolicy';
 import UserManager from './pages/UserManager';
 import Login from './pages/Login';
+import PerformanceLogs from './pages/PerformanceLogs';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/audit" element={<AuditLog />} />
         <Route path="/policy" element={<DataPolicy />} />
         <Route path="/users" element={<UserManager />} />
+        <Route path="/perf-logs" element={<PerformanceLogs />} />
         <Route path="/login" element={<Login />} />
       </Routes>
     </BrowserRouter>

@@ -68,7 +68,13 @@ def create_incident(data: IncidentCreate, db: Session = Depends(get_db)):
         user_id=None,
         action="incident.create",
         resource=f"incidents/{new_incident.id}",
-        details=f"Incident created with severity {new_incident.severity}",
+        details=(
+            f"Incident #{new_incident.id} created | "
+            f"Service: {service.name} ({service.environment}) | "
+            f"Severity: {new_incident.severity.upper()} | "
+            f"Symptoms: {new_incident.symptoms[:120]}{'...' if len(new_incident.symptoms) > 120 else ''} | "
+            f"Timeline: {new_incident.timeline[:80]}{'...' if len(new_incident.timeline) > 80 else ''}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -104,11 +110,15 @@ def update_checklist(incident_id: int, checklist: ChecklistUpdate, db: Session =
     incident.checklist_json = json.dumps(checklist.model_dump())
     db.commit()
     db.refresh(incident)
+    checked_items = [k for k, v in checklist.model_dump().items() if v]
     audit = AuditLog(
         user_id=None,
         action="incident.checklist_update",
         resource=f"incidents/{incident_id}",
-        details=f"Checklist updated for incident {incident_id}",
+        details=(
+            f"Incident #{incident_id} checklist updated | "
+            f"Checked items: {', '.join(checked_items) if checked_items else 'none'}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -159,7 +169,10 @@ def approve_summary(incident_id: int, summary: SummaryApprove, db: Session = Dep
         user_id=None,
         action="incident.summary_approved",
         resource=f"incidents/{incident_id}",
-        details=f"Summary approved for incident {incident_id}",
+        details=(
+            f"Incident #{incident_id} post-mortem approved | "
+            f"Summary: {summary.summary_text[:150]}{'...' if len(summary.summary_text) > 150 else ''}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
