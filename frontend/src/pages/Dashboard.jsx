@@ -133,15 +133,25 @@ const ServiceCard = ({ service }) => {
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}`}>
                 {envText.toUpperCase()}
               </span>
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${service.data_sensitivity === 'confidential' ? 'bg-red-100 text-red-700' : service.data_sensitivity === 'internal' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                {service.data_sensitivity?.toUpperCase() || '—'}
+              </span>
               {driftDetected && (
                 <span className="bg-red-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm animate-pulse">
                   DRIFT DETECTED
                 </span>
               )}
             </div>
-            <p className="text-gray-500 text-sm line-clamp-1" title={service.description}>
-              {service.description || 'No description provided.'}
-            </p>
+            <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
+              <span className="flex items-center gap-1.5 break-normal select-all">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                {service.owner || '—'}
+              </span>
+              <span className="flex items-center gap-1.5 break-normal font-mono select-all">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                {service.model_name || '—'}
+              </span>
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1">
             <button
@@ -424,7 +434,7 @@ export default function Dashboard() {
 
   const filteredServices = selectedModel === 'all'
     ? services
-    : services.filter(s => s.id === selectedModel || s.name === selectedModel);
+    : services.filter(s => String(s.id) === String(selectedModel) || s.name === selectedModel);
 
   if (loading) {
     return (
