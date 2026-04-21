@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from datetime import datetime
 
 # Handle relative vs absolute imports functionally dependent on execution directory
 try:
@@ -35,8 +34,7 @@ class MaintenanceOut(BaseModel):
     approved: bool
     next_eval_date: Optional[datetime] = None
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class ScheduleUpdate(BaseModel):
     next_eval_date: str

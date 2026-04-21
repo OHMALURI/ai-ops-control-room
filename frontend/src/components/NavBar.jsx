@@ -1,11 +1,10 @@
 import { NavLink, useNavigate } from "react-router-dom";
 
 const NAV_LINKS = [
-  { to: "/",            label: "Dashboard"         },
+  { to: "/dashboard",   label: "Dashboard"         },
   { to: "/registry",    label: "Service Registry"  },
   { to: "/perf-logs",   label: "Performance Logs"  },
-  { to: "/incidents",   label: "Incidents"         },
-  { to: "/maintenance", label: "Maintenance"       },
+  { to: "/operations",  label: "Operations"        },
   { to: "/audit",       label: "Audit Log"         },
   { to: "/policy",      label: "Data Policy"       },
   { to: "/users",       label: "User Manager"      },

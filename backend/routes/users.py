@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Literal
 
 from database import get_db
 from models import User
@@ -17,7 +18,7 @@ class UserRegister(BaseModel):
     username: str
     email: str
     password: str
-    role: str = "viewer"
+    role: Literal["admin", "maintainer", "user"] = "user"
 
 
 class UserLogin(BaseModel):
@@ -26,7 +27,7 @@ class UserLogin(BaseModel):
 
 
 class RoleUpdate(BaseModel):
-    role: str
+    role: Literal["admin", "maintainer", "user"]
 
 
 # ---------------------------------------------------------------------------
@@ -87,9 +88,9 @@ def list_users(
     return db.query(User).all()
 
 
-@router.put("/users/{user_id}/role")
+@router.put("/users/{username}/role")
 def update_role(
-    user_id: int,
+    username: str,
     payload: RoleUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -98,7 +99,7 @@ def update_role(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

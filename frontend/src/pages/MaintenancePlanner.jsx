@@ -120,8 +120,7 @@ export default function MaintenancePlanner() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8">
-      <div className="max-w-5xl mx-auto space-y-8">
+    <>
         
         <div className="mb-4">
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Maintenance Planner</h1>
@@ -358,7 +357,6 @@ export default function MaintenancePlanner() {
           )}
         </div>
 
-      </div>
-    </div>
+    </>
   );
 }

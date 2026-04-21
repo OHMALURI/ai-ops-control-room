@@ -21,7 +21,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, default="viewer", nullable=False)
+    role = Column(String, default="user", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationship
@@ -177,3 +177,5 @@ class DriftJudgeResult(Base):
             f"<DriftJudgeResult id={self.id} service_id={self.service_id} "
             f"drift_detected={self.drift_detected!r} judge_model={self.judge_model!r}>"
         )
+
+

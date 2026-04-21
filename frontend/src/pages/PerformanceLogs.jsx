@@ -62,18 +62,28 @@ export default function PerformanceLogs() {
   // Fetch evaluations whenever selected service changes
   useEffect(() => {
     if (!selected) return;
-    setLoading(true);
-    api.get(`/evaluations/${selected.id}`)
-      .then(r => setLogs(r.data || []))
-      .catch(() => setLogs([]))
-      .finally(() => setLoading(false));
+    const fetchSelectedData = async () => {
+      setLoading(true);
+      try {
+        const r = await api.get(`/evaluations/${selected.id}`);
+        setLogs(r.data || []);
+      } catch {
+        setLogs([]);
+      } finally {
+        setLoading(false);
+      }
 
-    // Also fetch drift judge history
-    setJudgeLoading(true);
-    api.get(`/drift-judge/${selected.id}`)
-      .then(r => setJudgeHistory(r.data || []))
-      .catch(() => setJudgeHistory([]))
-      .finally(() => setJudgeLoading(false));
+      setJudgeLoading(true);
+      try {
+        const r2 = await api.get(`/drift-judge/${selected.id}`);
+        setJudgeHistory(r2.data || []);
+      } catch {
+        setJudgeHistory([]);
+      } finally {
+        setJudgeLoading(false);
+      }
+    };
+    fetchSelectedData();
   }, [selected]);
 
   // Initialize visible lines when mode changes
@@ -81,7 +91,7 @@ export default function PerformanceLogs() {
     const keys = viewMode === 'by_benchmark' ? METRICS.map(m => m.key) : BENCHMARKS.map(b => b.key);
     const initialVisible = {};
     keys.forEach(k => initialVisible[k] = true);
-    setVisibleLines(initialVisible);
+    setTimeout(() => setVisibleLines(initialVisible), 0);
   }, [viewMode]);
 
   const toggleLine = (key) => setVisibleLines(p => ({ ...p, [key]: !p[key] }));
@@ -425,7 +435,9 @@ export default function PerformanceLogs() {
                           if (parsed && parsed.per_sample_scores) {
                             samples = parsed.per_sample_scores;
                           }
-                        } catch (err) {}
+                        } catch {
+                          // ignore json parse error
+                        }
                         const btype = e.dataset_type || 'alpacaeval';
                         const benchmark = BENCHMARKS.find(x => x.key === btype);
 

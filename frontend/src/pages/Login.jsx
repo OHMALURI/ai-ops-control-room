@@ -18,7 +18,7 @@ export default function Login() {
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("role", data.role);
       localStorage.setItem("username", data.username);
-      navigate("/");
+      navigate("/dashboard");
     } catch {
       setError("Invalid username or password");
     } finally {

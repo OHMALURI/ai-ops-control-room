@@ -6,7 +6,7 @@ from routes.services import router as services_router
 
 from database import Base, engine, SessionLocal
 from models import Service
-from services.evaluator import run_evaluation, GOLDEN_DATASETS
+from services.evaluator import run_evaluation
 from apscheduler.schedulers.background import BackgroundScheduler
 import sqlite3, os
 
@@ -52,6 +52,21 @@ def create_tables():
             conn.execute("ALTER TABLE evaluations ADD COLUMN dataset_type TEXT")
             conn.commit()
             print("[migration] Added column: dataset_type")
+
+        # Idempotent migration: add base_url column to services if missing
+        svc_cols = {r[1] for r in conn.execute("PRAGMA table_info(services)").fetchall()}
+        if "base_url" not in svc_cols:
+            conn.execute("ALTER TABLE services ADD COLUMN base_url TEXT")
+            conn.commit()
+            print("[migration] Added column: services.base_url")
+            
+        # Drop evidently_reports table if it exists
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "evidently_reports" in tables:
+            conn.execute("DROP TABLE evidently_reports")
+            conn.commit()
+            print("[migration] Dropped table: evidently_reports")
+            
         conn.close()
     except Exception as e:
         print(f"[migration] Warning: {e}")

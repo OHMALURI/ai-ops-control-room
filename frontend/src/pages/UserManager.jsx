@@ -6,7 +6,7 @@ function authHeader() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-const ROLES = ["admin", "maintainer", "viewer"];
+const ROLES = ["admin", "maintainer", "user"];
 
 function UserRow({ user, onSaved }) {
   const [role, setRole] = useState(user.role);
@@ -18,7 +18,7 @@ function UserRow({ user, onSaved }) {
     setSaved(false);
     try {
       await api.put(
-        `/auth/users/${user.id}/role`,
+        `/auth/users/${user.username}/role`,
         { role },
         { headers: authHeader() }
       );
@@ -83,12 +83,18 @@ export default function UserManager() {
   const isAdmin = currentRole === "admin";
 
   useEffect(() => {
-    if (!isAdmin) { setLoading(false); return; }
-    api
-      .get("/auth/users", { headers: authHeader() })
-      .then(({ data }) => setUsers(data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    if (!isAdmin) { setTimeout(() => setLoading(false), 0); return; }
+    const fetchUsers = async () => {
+      try {
+        const { data } = await api.get("/auth/users", { headers: authHeader() });
+        setUsers(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUsers();
   }, [isAdmin]);
 
   function handleSaved(id, newRole) {

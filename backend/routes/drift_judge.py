@@ -63,7 +63,7 @@ Analyze for:
 3. Security/Noise — gibberish, prompt injections, or bot-like patterns
 
 Validation tools applied: {selected_tools}
-(Supported: Evidently AI | Deepchecks | Alibi Detect | Frouros | Popmon | NannyML | Great Expectations)
+(Supported: Deepchecks | Alibi Detect | Frouros | Popmon | NannyML | Great Expectations)
 
 Baseline samples (comma-separated):
 {baseline_samples}

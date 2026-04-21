@@ -10,7 +10,7 @@ Supports 6 golden dataset types:
   • colbench     – agents & tools use  (multi-turn collaboration)
 """
 
-import os, json, time, statistics
+import os, json, time, statistics, random
 from openai import OpenAI
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -36,6 +36,18 @@ def _get_client() -> OpenAI:
             )
         _client = OpenAI(api_key=api_key)
     return _client
+
+_eval_client = None
+
+def _get_eval_client() -> OpenAI:
+    """Lazy OpenAI client configured for local Ollama to evaluate responses."""
+    global _eval_client
+    if _eval_client is None:
+        _eval_client = OpenAI(
+            base_url="http://localhost:11434/v1",
+            api_key="ollama"
+        )
+    return _eval_client
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GOLDEN DATASETS  (5 samples each)
@@ -276,6 +288,60 @@ GOLDEN_DATASETS = {
             "constraints": ["Exactly one question", "One sentence only"],
         },
     ],
+
+    # ── 7. JudgeBench — evaluating LLM-based judges ─────────────────────────
+    "judgebench": [
+        {
+            "input": (
+                "Question: Consider an additive white Gaussian noise channel. Which property is preserved?\n"
+                "Response A: The channel capacity is maximized by a Gaussian input.\n"
+                "Response B: The signal-to-noise ratio is independent of the bandwidth.\n"
+                "Which response is better or more accurate? Reply ONLY with 'A>B', 'B>A', or 'A=B'."
+            ),
+            "expected_output": "A>B",
+            "constraints": ["Single label answer only: A>B, B>A, or A=B", "No explanations"],
+        },
+        {
+            "input": (
+                "Question: Write a Python function to check for prime numbers.\n"
+                "Response A: def is_prime(n): return n > 1 and all(n % i != 0 for i in range(2, int(n**0.5) + 1))\n"
+                "Response B: def is_prime(n): return [i for i in range(2, n) if n % i == 0]\n"
+                "Which response is better? Reply ONLY with 'A>B', 'B>A', or 'A=B'."
+            ),
+            "expected_output": "A>B",
+            "constraints": ["Single label answer only: A>B, B>A, or A=B", "No explanations"],
+        },
+        {
+            "input": (
+                "Question: What was the primary cause of the French Revolution?\n"
+                "Response A: The primary cause was the assassination of Archduke Franz Ferdinand.\n"
+                "Response B: The primary causes included social inequalities, heavy taxation, and financial crisis.\n"
+                "Which response is better? Reply ONLY with 'A>B', 'B>A', or 'A=B'."
+            ),
+            "expected_output": "B>A",
+            "constraints": ["Single label answer only: A>B, B>A, or A=B", "No explanations"],
+        },
+        {
+            "input": (
+                "Question: If a train travels 60 miles in 1.5 hours, what is its average speed?\n"
+                "Response A: The average speed is 40 miles per hour.\n"
+                "Response B: The train is traveling at an average speed of 90 miles per hour.\n"
+                "Which response is better? Reply ONLY with 'A>B', 'B>A', or 'A=B'."
+            ),
+            "expected_output": "A>B",
+            "constraints": ["Single label answer only: A>B, B>A, or A=B", "No explanations"],
+        },
+        {
+            "input": (
+                "Question: Create a summary of machine learning.\n"
+                "Response A: Machine learning is studying how computers can learn from data. It includes supervised and unsupervised learning.\n"
+                "Response B: Machine learning is when robots take over the world using physical force.\n"
+                "Which response is better? Reply ONLY with 'A>B', 'B>A', or 'A=B'."
+            ),
+            "expected_output": "A>B",
+            "constraints": ["Single label answer only: A>B, B>A, or A=B", "No explanations"],
+        },
+    ],
 }
 
 DATASET_LABELS = {
@@ -285,16 +351,17 @@ DATASET_LABELS = {
     "agentharm":  "AgentHarm",
     "videomme":   "Video-MME",
     "colbench":   "ColBench",
+    "judgebench": "JudgeBench",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 def _judge(system_prompt: str, user_content: str) -> float:
-    """Call GPT-4o-mini and parse a 0-100 score from the response."""
+    """Call local Ollama evaluator and parse a 0-100 score from the response."""
     try:
-        resp = _get_client().chat.completions.create(
-            model="gpt-4o-mini",
+        resp = _get_eval_client().chat.completions.create(
+            model="qwen3.5",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_content},
@@ -402,7 +469,8 @@ def run_evaluation(service_id: int, db: Session, dataset_type: str = "alpacaeval
     if dataset_type not in GOLDEN_DATASETS:
         dataset_type = "alpacaeval"
 
-    samples = GOLDEN_DATASETS[dataset_type]
+    samples = list(GOLDEN_DATASETS[dataset_type])
+    random.shuffle(samples)
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
         raise ValueError(f"Service {service_id} not found")
