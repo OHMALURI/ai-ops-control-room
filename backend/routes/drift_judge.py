@@ -58,9 +58,9 @@ DRIFT_PROMPT = """You are a specialized Drift Detection Judge.
 Compare the Baseline vs Live query samples below and return ONLY valid JSON.
 
 Analyze for:
-1. Intent shift — new topics, products, or user goals not present in baseline
-2. Syntax shift — changes in length, technicality, or formatting patterns
-3. Noise — gibberish, prompt injections, or bot-like patterns
+1. Data Drift — intent shift, new topics, products, or user goals not present in baseline
+2. Concept Drift — syntax shift, changes in length, technicality, or formatting patterns
+3. Security/Noise — gibberish, prompt injections, or bot-like patterns
 
 Validation tools applied: {selected_tools}
 (Supported: Evidently AI | Deepchecks | Alibi Detect | Frouros | Popmon | NannyML | Great Expectations)
@@ -72,7 +72,7 @@ Live samples (comma-separated):
 {live_samples}
 
 Respond ONLY with this JSON, no preamble, no markdown:
-{{"drift_detected":"Major"|"Minor"|"None","shift_type":"Intent"|"Syntax"|"Noise"|"NA","top_new_keyword":"single_word","severity_score":0-10,"short_reason":"max 15 words","judge_model":"{llm_judge}","tools_used":["{selected_tools}"]}}"""
+{"drift_detected":"Major"|"Minor"|"None","shift_type":"Data Drift"|"Concept Drift"|"Noise"|"NA","top_new_keyword":"single_word","severity_score":0-10,"short_reason":"max 15 words","judge_model":"{llm_judge}","tools_used":["{selected_tools}"]}"""
 
 
 def build_prompt(baseline: str, live: str, tools: List[str], judge: str) -> str:

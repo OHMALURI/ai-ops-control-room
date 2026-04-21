@@ -12,6 +12,7 @@ Supports 6 golden dataset types:
 
 import os, json, time, statistics
 from openai import OpenAI
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from models import Evaluation, Service
 
@@ -307,27 +308,33 @@ def _judge(system_prompt: str, user_content: str) -> float:
         return 0.0
 
 
-def _get_model_response(prompt: str) -> str:
-    """Get a response from gpt-4o-mini for a given prompt."""
+def _get_model_response(prompt: str, model_id: str = "gpt-4o-mini", base_url: str = None) -> str:
+    """Get a response from the service's model for a given prompt."""
     try:
-        resp = _get_client().chat.completions.create(
-            model="gpt-4o-mini",
+        # Use custom base_url for local models (LM Studio/Ollama)
+        client = OpenAI(
+            api_key=os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY"),
+            base_url=base_url if base_url else None
+        )
+        resp = client.chat.completions.create(
+            model=model_id,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=200,
         )
         return resp.choices[0].message.content.strip()
-    except Exception:
+    except Exception as e:
+        print(f"[evaluator] Model response error ({model_id}): {e}")
         return ""
 
 
-def _score_sample(sample: dict) -> dict:
+def _score_sample(sample: dict, model_id: str, base_url: str) -> dict:
     """Run all 5 metrics for a single golden dataset sample."""
     question    = sample["input"]
     expected    = sample["expected_output"]
     constraints = "\n".join(f"- {c}" for c in sample.get("constraints", []))
 
-    actual = _get_model_response(question)
+    actual = _get_model_response(question, model_id=model_id, base_url=base_url)
 
     base_ctx = (
         f"Question: {question}\n"
@@ -397,9 +404,14 @@ def run_evaluation(service_id: int, db: Session, dataset_type: str = "alpacaeval
 
     samples = GOLDEN_DATASETS[dataset_type]
     service = db.query(Service).filter(Service.id == service_id).first()
+    if not service:
+        raise ValueError(f"Service {service_id} not found")
+
+    model_id = service.model_name
+    base_url = service.base_url
 
     t_start = time.time()
-    all_scores = [_score_sample(s) for s in samples]
+    all_scores = [_score_sample(s, model_id=model_id, base_url=base_url) for s in samples]
     latency_ms = int((time.time() - t_start) * 1000)
 
     def avg(key):
@@ -412,9 +424,63 @@ def run_evaluation(service_id: int, db: Session, dataset_type: str = "alpacaeval
     toxicity_score       = avg("toxicity_score")
     instruction_following= avg("instruction_following")
 
-    metric_vals = [v for v in [accuracy, relevance_score, factuality_score, toxicity_score, instruction_following] if v is not None]
-    quality_score = statistics.mean(metric_vals) if metric_vals else 0.0
-    drift_triggered = quality_score < 60.0
+    # --- Categorized Drift Detection (30% Threshold) ---
+    drift_triggered = False
+    drift_type = None
+    drift_reason = None
+
+    # Fetch last evaluation for comparison
+    last_eval = (
+        db.query(Evaluation)
+        .filter(Evaluation.service_id == service_id, Evaluation.dataset_type == dataset_type)
+        .order_by(desc(Evaluation.timestamp))
+        .first()
+    )
+
+    if last_eval:
+        checks = [
+            ("Accuracy", accuracy, last_eval.accuracy, "Model Drift"),
+            ("Safety", toxicity_score, last_eval.toxicity_score, "Concept Drift"),
+            ("Instruction", instruction_following, last_eval.instruction_following, "Concept Drift"),
+            ("Relevance", relevance_score, last_eval.relevance_score, "Model Drift"),
+            ("Factuality", factuality_score, last_eval.factuality_score, "Model Drift"),
+        ]
+
+        for label, current_val, last_val, d_type in checks:
+            if current_val is not None and last_val is not None:
+                # Calculate absolute drop
+                drop = last_val - current_val
+                if drop > 30.0:
+                    drift_triggered = True
+                    drift_type = d_type
+                    drift_reason = f"{label} dropped from {last_val:.1f} to {current_val:.1f}"
+                    break # Take the first significant drift found
+
+    # --- Fallback/Initial Diagnostic Logic ---
+    if not drift_triggered:
+        metric_vals = [v for v in [accuracy, relevance_score, factuality_score, toxicity_score, instruction_following] if v is not None]
+        quality_score = statistics.mean(metric_vals) if metric_vals else 0.0
+        
+        if quality_score < 60.0:
+            drift_triggered = True
+            
+            # Find the worst performing metric to label the deficit
+            deficits = []
+            if accuracy is not None and accuracy < 50: deficits.append(("Accuracy Deficit", accuracy))
+            if toxicity_score is not None and toxicity_score < 50: deficits.append(("Alignment Gap", toxicity_score))
+            if instruction_following is not None and instruction_following < 50: deficits.append(("Instruction Failure", instruction_following))
+            
+            if deficits:
+                # Pick the absolute worst one for the main label
+                deficits.sort(key=lambda x: x[1])
+                drift_type, worst_val = deficits[0]
+                drift_reason = f"Metric is critically low ({worst_val:.1f}%). Objective performance failure."
+            else:
+                drift_type = "Low Performance"
+                drift_reason = f"Average score ({quality_score:.1f}%) is below 60% threshold."
+    else:
+        metric_vals = [v for v in [accuracy, relevance_score, factuality_score, toxicity_score, instruction_following] if v is not None]
+        quality_score = statistics.mean(metric_vals) if metric_vals else 0.0
 
     check_results = json.dumps({
         "dataset_type": dataset_type,
@@ -428,6 +494,8 @@ def run_evaluation(service_id: int, db: Session, dataset_type: str = "alpacaeval
         quality_score=round(quality_score, 2),
         check_results=check_results,
         drift_triggered=drift_triggered,
+        drift_type=drift_type,
+        drift_reason=drift_reason,
         latency_ms=latency_ms,
         dataset_type=dataset_type,
         accuracy=round(accuracy, 2) if accuracy is not None else None,

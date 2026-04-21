@@ -6,6 +6,7 @@ const EMPTY_FORM = {
   owner: '',
   environment: 'dev',
   model_name: '',
+  base_url: '',
   data_sensitivity: 'internal',
 };
 
@@ -84,6 +85,7 @@ export default function ServiceRegistry() {
         owner: service.owner,
         environment: service.environment,
         model_name: service.model_name,
+        base_url: service.base_url || '',
         data_sensitivity: service.data_sensitivity,
       },
     }));
@@ -98,9 +100,13 @@ export default function ServiceRegistry() {
   };
 
   const handleSave = async (id) => {
-    const { data } = await api.put(`/services/${id}`, editState[id]);
-    setServices(prev => prev.map(s => s.id === id ? data : s));
-    cancelEdit(id);
+    try {
+      await api.put(`/services/${id}`, editState[id]);
+      await fetchServices();
+      cancelEdit(id);
+    } catch (err) {
+      console.error("Failed to save service:", err);
+    }
   };
 
   // ── Test Connection ────────────────────────────────────────────────────────
@@ -158,6 +164,12 @@ export default function ServiceRegistry() {
             <option value="dev">dev</option>
             <option value="prod">prod</option>
           </select>
+          <input
+            className={inp}
+            placeholder="Base URL (e.g. http://localhost:1234/v1)"
+            value={addForm.base_url}
+            onChange={e => setAddForm(p => ({ ...p, base_url: e.target.value }))}
+          />
           <select
             className={`${inp} ${modelsLoading ? 'bg-gray-100 animate-pulse' : ''}`}
             value={addForm.model_name}
@@ -212,7 +224,7 @@ export default function ServiceRegistry() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-100 text-gray-500 uppercase text-xs tracking-wide">
               <tr>
-                {['Name', 'Owner', 'Environment', 'Model Name', 'Data Sensitivity', 'Actions'].map(h => (
+                {['Name', 'Owner', 'Env', 'Model', 'Base URL', 'Sensitivity', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold">{h}</th>
                 ))}
               </tr>
@@ -266,6 +278,14 @@ export default function ServiceRegistry() {
                           </select>
                         </td>
                         <td className="px-4 py-2">
+                          <input 
+                            className={inp} 
+                            value={ef.base_url}
+                            placeholder="Base URL"
+                            onChange={e => handleEditChange(service.id, 'base_url', e.target.value)} 
+                          />
+                        </td>
+                        <td className="px-4 py-2">
                           <select className={inp} value={ef.data_sensitivity}
                             onChange={e => handleEditChange(service.id, 'data_sensitivity', e.target.value)}>
                             <option value="public">public</option>
@@ -291,6 +311,9 @@ export default function ServiceRegistry() {
                             }`}>{service.environment}</span>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{service.model_name}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400 truncate max-w-[120px]" title={service.base_url}>
+                          {service.base_url || 'Default (OpenAI)'}
+                        </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${service.data_sensitivity === 'confidential'
                               ? 'bg-red-100 text-red-700'

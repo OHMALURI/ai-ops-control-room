@@ -111,6 +111,7 @@ const ServiceCard = ({ service }) => {
   const chartData = [...allEvals].reverse().map(e => {
     const dateObj = new Date(e.timestamp);
     const row = {
+      timestamp: e.timestamp, // Unique key for Recharts
       time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       fullDate: dateObj.toLocaleString(),
       latency_ms: e.latency_ms ?? null,
@@ -137,9 +138,16 @@ const ServiceCard = ({ service }) => {
                 {service.data_sensitivity?.toUpperCase() || '—'}
               </span>
               {driftDetected && (
-                <span className="bg-red-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm animate-pulse">
-                  DRIFT DETECTED
-                </span>
+                <div className="flex flex-col items-start gap-1">
+                  <span className="bg-red-500 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm animate-pulse whitespace-nowrap">
+                    {latestEval?.drift_type ? `⚠️ ${latestEval.drift_type.toUpperCase()}` : 'DRIFT DETECTED'}
+                  </span>
+                  {latestEval?.drift_reason && (
+                    <span className="text-[10px] text-red-600 font-medium italic max-w-[200px] leading-tight">
+                      {latestEval.drift_reason}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
@@ -180,7 +188,7 @@ const ServiceCard = ({ service }) => {
 
       {/* ── Dataset Type Tabs ── */}
       <div className="px-6 pt-4 pb-0 border-b border-gray-100">
-        <div className="flex gap-1 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           {DATASET_TYPES.map(dt => {
             const isActive = selectedDataset === dt.key;
             return (
@@ -205,7 +213,7 @@ const ServiceCard = ({ service }) => {
 
       {/* ── Metrics Row ── */}
       <div className="px-6 pt-6 pb-2">
-        <div className="grid grid-cols-6 gap-3 mb-6">
+        <div className="flex flex-wrap gap-3 mb-6">
           {METRICS.map(m => {
             const val = latestEval?.[m.key];
             const isActive = activeMetric === m.key;
@@ -217,32 +225,35 @@ const ServiceCard = ({ service }) => {
               <button
                 key={m.key}
                 onClick={() => setActiveMetric(isActive ? 'all' : m.key)}
+                onMouseEnter={() => setActiveMetric(m.key)}
+                onMouseLeave={() => setActiveMetric('all')}
                 title={m.desc}
-                className={`p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
+                className={`flex-1 min-w-[140px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
                   isActive
                     ? 'border-indigo-400 bg-indigo-50 shadow-md ring-2 ring-indigo-300'
                     : 'bg-gray-50 border-gray-100 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/40'
                 }`}
               >
-                <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1 leading-tight">{m.label}</p>
-                <p className={`text-xl font-bold ${color}`}>
+                <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">{m.label}</p>
+                <p className={`text-lg font-bold ${color}`}>
                   {val != null ? `${val.toFixed(1)}%` : 'No data'}
                 </p>
               </button>
             );
           })}
 
-          {/* Latency — clickable */}
+          {/* Latency card */}
           <button
             onClick={() => setActiveMetric(activeMetric === 'latency_ms' ? 'all' : 'latency_ms')}
-            title="Response latency in milliseconds"
-            className={`p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
+            onMouseEnter={() => setActiveMetric('latency_ms')}
+            onMouseLeave={() => setActiveMetric('all')}
+            className={`flex-1 min-w-[120px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
               activeMetric === 'latency_ms'
                 ? 'border-indigo-400 bg-indigo-50 shadow-md ring-2 ring-indigo-300'
                 : 'bg-gray-50 border-gray-100 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/40'
             }`}
           >
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1 leading-tight">Latency</p>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">Latency</p>
             <p className="text-md font-medium text-gray-700 mt-0.5">{latency}</p>
           </button>
         </div>
@@ -273,10 +284,14 @@ const ServiceCard = ({ service }) => {
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 30, left: -20 }}>
                   <XAxis
-                    dataKey="time"
-                    stroke="#6b7280" fontSize={12} fontWeight={500}
+                    dataKey="timestamp"
+                    stroke="#6b7280" fontSize={11} fontWeight={500}
                     tickLine={false} axisLine={{ stroke: '#e5e7eb' }}
                     dy={8} tick={{ fill: '#374151' }}
+                    tickFormatter={(val) => {
+                      const d = new Date(val);
+                      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    }}
                   />
                   <YAxis
                     domain={activeMetric === 'latency_ms' ? ['auto', 'auto'] : [0, 100]}
@@ -306,27 +321,36 @@ const ServiceCard = ({ service }) => {
                       dataKey="latency_ms"
                       name="Latency (ms)"
                       stroke="#f59e0b"
-                      strokeWidth={3}
+                      strokeWidth={4}
                       dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#ffffff' }}
                       activeDot={{ r: 5, fill: '#f59e0b', stroke: '#ffffff', strokeWidth: 2 }}
                       animationDuration={1000}
                       connectNulls
                     />
                   ) : (
-                    (activeMetric === 'all' ? METRICS : METRICS.filter(m => m.key === activeMetric)).map(m => (
-                      <Line
-                        key={m.key}
-                        type="monotone"
-                        dataKey={m.key}
-                        name={m.label}
-                        stroke={m.color}
-                        strokeWidth={activeMetric === 'all' ? 2 : 3}
-                        dot={{ r: activeMetric === 'all' ? 2 : 4, fill: m.color, strokeWidth: 2, stroke: '#ffffff' }}
-                        activeDot={{ r: 5, fill: m.color, stroke: '#ffffff', strokeWidth: 2 }}
-                        animationDuration={1000}
-                        connectNulls
-                      />
-                    ))
+                    // Render highlighted metric LAST so it appears on top
+                    [
+                      ...METRICS.filter(m => activeMetric !== 'all' && m.key !== activeMetric),
+                      ...METRICS.filter(m => activeMetric === 'all' || m.key === activeMetric)
+                    ].map(m => {
+                      const isHighlighted = activeMetric === m.key;
+                      const isOthersDimmed = activeMetric !== 'all' && !isHighlighted;
+                      return (
+                        <Line
+                          key={m.key}
+                          type="monotone"
+                          dataKey={m.key}
+                          name={m.label}
+                          stroke={m.color}
+                          strokeWidth={isHighlighted ? 4 : 2}
+                          strokeOpacity={isOthersDimmed ? 0.3 : 1}
+                          dot={{ r: isHighlighted ? 4 : 2, fill: m.color, strokeWidth: 2, stroke: '#ffffff' }}
+                          activeDot={{ r: 6, fill: m.color, stroke: '#ffffff', strokeWidth: 2 }}
+                          animationDuration={500}
+                          connectNulls
+                        />
+                      );
+                    })
                   )}
                 </LineChart>
               </ResponsiveContainer>

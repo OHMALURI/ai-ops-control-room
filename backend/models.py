@@ -39,6 +39,7 @@ class Service(Base):
     owner = Column(String, nullable=False)
     environment = Column(String, nullable=False)
     model_name = Column(String, nullable=False)
+    base_url = Column(String, nullable=True)                 # For local providers (LM Studio, Ollama)
     system_prompt = Column(String, nullable=True)
     api_key_ref = Column(String, nullable=True)
     data_sensitivity = Column(String, nullable=False)
@@ -62,6 +63,8 @@ class Evaluation(Base):
     quality_score = Column(Float, nullable=False)          # overall average
     check_results = Column(String, nullable=False)          # JSON stored as string
     drift_triggered = Column(Boolean, default=False, nullable=False)
+    drift_type      = Column(String, nullable=True)         # "Accuracy Decay", "Alignment Shift", etc.
+    drift_reason    = Column(String, nullable=True)         # e.g., "Accuracy dropped from 90 to 45"
     latency_ms = Column(Integer, nullable=True)
     dataset_type = Column(String, nullable=True)            # which golden dataset was used
 

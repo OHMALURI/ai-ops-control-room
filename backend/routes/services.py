@@ -26,6 +26,7 @@ class ServiceCreate(BaseModel):
     owner: str
     environment: str
     model_name: str
+    base_url: Optional[str] = None
     system_prompt: Optional[str] = None
     api_key_ref: Optional[str] = None
     data_sensitivity: str
@@ -182,16 +183,20 @@ def delete_service(service_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{service_id}/test")
 def test_service(service_id: int, db: Session = Depends(get_db)):
-    """Ping OpenAI with a minimal prompt to verify the service's model is reachable."""
-    _get_or_404(service_id, db)  # Ensure service exists
+    """Ping the service's model to verify it is reachable."""
+    service = _get_or_404(service_id, db)
 
     api_key = os.environ.get("OPENAI_KEY")
     start = time.time()
 
     try:
-        client = openai.OpenAI(api_key=api_key)
+        # Use service's base_url if provided, else default to OpenAI
+        client = openai.OpenAI(
+            api_key=api_key,
+            base_url=service.base_url if service.base_url else None
+        )
         client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=service.model_name,
             messages=[{"role": "user", "content": "Say OK"}],
             max_tokens=5,
         )
