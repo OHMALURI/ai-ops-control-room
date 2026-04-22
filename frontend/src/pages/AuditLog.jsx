@@ -99,7 +99,7 @@ function StatCard({ label, value, sub }) {
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 export default function AuditLog() {
-  const role = localStorage.getItem("role");
+  const role = localStorage.getItem("effectiveRole") || localStorage.getItem("role");
 
   const [entries,    setEntries]    = useState([]);
   const [allActions, setAllActions] = useState([]);

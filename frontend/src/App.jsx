@@ -1,4 +1,6 @@
-import { BrowserRouter, Route, Routes, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import api from './api';
 import NavBar from './components/NavBar';
 import Dashboard from './pages/Dashboard';
 import ServiceRegistry from './pages/ServiceRegistry';
@@ -11,7 +13,22 @@ import PerformanceLogs from './pages/PerformanceLogs';
 
 function ProtectedLayout() {
   const token = localStorage.getItem("token");
-  
+
+  useEffect(() => {
+    if (!token) return;
+    const refresh = () => {
+      api.get("/auth/me").then(({ data }) => {
+        const eff = data.effective_role || data.role;
+        const isTmp = data.is_temp_admin ? "true" : "false";
+        localStorage.setItem("effectiveRole", eff);
+        localStorage.setItem("isTempAdmin", isTmp);
+      }).catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, 30000); // re-check every 30s
+    return () => clearInterval(id);
+  }, [token]);
+
   if (!token) {
     return <Navigate to="/login" replace />;
   }

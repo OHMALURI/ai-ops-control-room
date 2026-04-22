@@ -15,12 +15,17 @@ export default function Login() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/login", { username, password });
+      const effectiveRole = data.effective_role || data.role;
+      const isTempAdmin   = data.role !== effectiveRole && effectiveRole === "admin";
       localStorage.setItem("token", data.access_token);
       localStorage.setItem("role", data.role);
+      localStorage.setItem("effectiveRole", effectiveRole);
+      localStorage.setItem("isTempAdmin", isTempAdmin ? "true" : "false");
       localStorage.setItem("username", data.username);
       navigate("/dashboard");
-    } catch {
-      setError("Invalid username or password");
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || "Login failed";
+      setError(msg);
     } finally {
       setLoading(false);
     }

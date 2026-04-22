@@ -15,9 +15,15 @@ const ADMIN_LINKS = [
 
 export default function NavBar() {
   const navigate = useNavigate();
-  const username = localStorage.getItem("username") || "—";
-  const role     = localStorage.getItem("role")     || "—";
-  const NAV_LINKS = role === "admin" ? [...BASE_LINKS, ...ADMIN_LINKS] : BASE_LINKS;
+  const username      = localStorage.getItem("username")      || "—";
+  const role          = localStorage.getItem("role")          || "—";
+  const effectiveRole = localStorage.getItem("effectiveRole") || role;
+  const isTempAdmin   = localStorage.getItem("isTempAdmin") === "true";
+  const NAV_LINKS = effectiveRole === "admin"
+    ? [...BASE_LINKS, ...ADMIN_LINKS]
+    : role === "maintainer"
+    ? [...BASE_LINKS, { to: "/users", label: "Access Request" }]
+    : BASE_LINKS;
 
   function handleLogout() {
     localStorage.clear();
@@ -60,7 +66,10 @@ export default function NavBar() {
       <div className="flex items-center gap-3 shrink-0">
         <div className="text-right hidden sm:block">
           <p className="text-white text-sm font-medium leading-none">{username}</p>
-          <p className="text-gray-500 text-xs mt-0.5 capitalize">{role}</p>
+          <p className="text-gray-500 text-xs mt-0.5 capitalize flex items-center gap-1">
+            {effectiveRole}
+            {isTempAdmin && <span className="text-amber-400 text-[10px] font-bold">(temp)</span>}
+          </p>
         </div>
         <button
           onClick={handleLogout}

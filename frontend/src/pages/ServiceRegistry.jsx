@@ -10,6 +10,9 @@ const EMPTY_FORM = {
 };
 
 export default function ServiceRegistry() {
+  const effectiveRole = localStorage.getItem("effectiveRole") || localStorage.getItem("role") || "user";
+  const canConfigure  = effectiveRole === "admin" || effectiveRole === "maintainer";
+
   const [services, setServices] = useState([]);
   const [addForm, setAddForm] = useState(EMPTY_FORM);
   const [editState, setEditState] = useState({}); // { [id]: formValues }
@@ -137,7 +140,15 @@ export default function ServiceRegistry() {
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Service Registry</h1>
 
       {/* ── Add Service Form ────────────────────────────────────────────────── */}
-      <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-8">
+      {!canConfigure && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-5 py-3 mb-6 text-sm">
+          <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          You have read-only access. Contact an admin or maintainer to add, edit, or delete services.
+        </div>
+      )}
+      {canConfigure && <section className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-8">
         <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-4">Add Service</h2>
         <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <input
@@ -197,7 +208,7 @@ export default function ServiceRegistry() {
             + Add
           </button>
         </form>
-      </section>
+      </section>}
 
       {/* ── Services Table ──────────────────────────────────────────────────── */}
       <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
@@ -302,10 +313,14 @@ export default function ServiceRegistry() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <button onClick={() => startEdit(service)}
-                              className={btn('bg-yellow-100 hover:bg-yellow-200 text-yellow-800')}>Edit</button>
-                            <button onClick={() => requestDelete(service)}
-                              className={btn('bg-red-100 hover:bg-red-200 text-red-700')}>Delete</button>
+                            {canConfigure && (
+                              <>
+                                <button onClick={() => startEdit(service)}
+                                  className={btn('bg-yellow-100 hover:bg-yellow-200 text-yellow-800')}>Edit</button>
+                                <button onClick={() => requestDelete(service)}
+                                  className={btn('bg-red-100 hover:bg-red-200 text-red-700')}>Delete</button>
+                              </>
+                            )}
                             <button onClick={() => handleTest(service.id)}
                               className={btn('bg-gray-100 hover:bg-gray-200 text-gray-700')}>Test</button>
                             <TestBadge result={testResults[service.id]} />

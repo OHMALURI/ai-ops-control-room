@@ -68,6 +68,8 @@ const SECTION_COLORS = { single_turn: 'text-blue-600 bg-blue-50 border-blue-200'
 
 // ── Main ServiceCard ──────────────────────────────────────────────────────────
 const ServiceCard = ({ service }) => {
+  const effectiveRole = localStorage.getItem("effectiveRole") || localStorage.getItem("role") || "user";
+  const canRunEval    = effectiveRole === "admin" || effectiveRole === "maintainer";
   const [latestEval, setLatestEval]         = useState(null);
   const [allEvals, setAllEvals]             = useState([]);
   const [isLoading, setIsLoading]           = useState(false);
@@ -275,34 +277,38 @@ const ServiceCard = ({ service }) => {
 
           {/* Buttons */}
           <div className="flex flex-col items-end gap-2">
-            <div className="flex gap-2">
-              {isLoading && (
-                <button
-                  onClick={handleStop}
-                  className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all"
-                >
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                    <rect x="6" y="6" width="12" height="12" rx="1" />
-                  </svg>
-                  Stop
-                </button>
-              )}
-              <button
-                onClick={handleRunEvaluation}
-                disabled={isLoading || isFetchingInitial}
-                className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center min-w-[150px]"
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            {canRunEval ? (
+              <div className="flex gap-2">
+                {isLoading && (
+                  <button
+                    onClick={handleStop}
+                    className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <rect x="6" y="6" width="12" height="12" rx="1" />
                     </svg>
-                    Evaluating…
-                  </>
-                ) : 'Run Evaluation'}
-              </button>
-            </div>
+                    Stop
+                  </button>
+                )}
+                <button
+                  onClick={handleRunEvaluation}
+                  disabled={isLoading || isFetchingInitial}
+                  className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center min-w-[150px]"
+                >
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Evaluating…
+                    </>
+                  ) : 'Run Evaluation'}
+                </button>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-500 italic">View only — run evals requires maintainer+</span>
+            )}
             {isLoading && totalSteps > 0 && (
               <span className="text-[10px] text-gray-400">
                 {doneCount} / {totalSteps} steps
@@ -313,9 +319,9 @@ const ServiceCard = ({ service }) => {
                 Runs: <strong className="text-gray-600">Single-Turn + Multi-Turn</strong>
               </span>
             )}
-          </div>
         </div>
       </div>
+    </div>
 
       {/* ── Dataset Type Tabs ── */}
       <div className="px-6 pt-4 pb-0 border-b border-gray-100">

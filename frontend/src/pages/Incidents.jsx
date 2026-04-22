@@ -390,9 +390,9 @@ export default function Incidents() {
   const [expandedId, setExpandedId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const userRole = localStorage.getItem("role") || "viewer";
-  const isAdmin = userRole === "admin";
-  const canConfigure = userRole === "admin" || userRole === "maintainer";
+  const effectiveRole = localStorage.getItem("effectiveRole") || localStorage.getItem("role") || "user";
+  const isAdmin = effectiveRole === "admin";
+  const canConfigure = effectiveRole === "admin" || effectiveRole === "maintainer";
 
   const [formData, setFormData] = useState({
     service_id: '',

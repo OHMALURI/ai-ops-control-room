@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
+from models import User, TempAdminGrant
 
 # ---------------------------------------------------------------------------
 # Config
@@ -25,7 +25,7 @@ pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    """Return bcrypt hash of plain-text password."""
+    """Return sha256_crypt hash of plain-text password."""
     return pwd_context.hash(password)
 
 
@@ -78,6 +78,33 @@ def get_current_user(
     if user is None:
         raise credentials_exception
     return user
+
+
+def get_effective_role(user_id: int, db) -> str:
+    """Returns 'admin' if user has an active temp grant, otherwise their real role."""
+    from datetime import datetime as _dt
+    grant = db.query(TempAdminGrant).filter(
+        TempAdminGrant.user_id == user_id,
+        TempAdminGrant.status == "approved",
+        TempAdminGrant.expires_at > _dt.utcnow(),
+    ).first()
+    if grant:
+        return "admin"
+    user = db.query(User).filter(User.id == user_id).first()
+    return user.role if user else "user"
+
+
+def is_temp_admin(user_id: int, db) -> bool:
+    """True if the user's admin status comes from a temp grant, not their real role."""
+    from datetime import datetime as _dt
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user or user.role == "admin":
+        return False
+    return db.query(TempAdminGrant).filter(
+        TempAdminGrant.user_id == user_id,
+        TempAdminGrant.status == "approved",
+        TempAdminGrant.expires_at > _dt.utcnow(),
+    ).first() is not None
 
 
 def get_optional_user(
