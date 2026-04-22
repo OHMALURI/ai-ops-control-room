@@ -72,28 +72,23 @@ def list_services(db: Session = Depends(get_db)):
     return db.query(Service).all()
 
 
+
 @router.get("/available-models")
 def get_available_models(db: Session = Depends(get_db)):
-    """Fetch available models from OpenAI and test their responsiveness."""
+    """Fetch available OpenAI chat models and test their responsiveness."""
     import concurrent.futures
-    api_key = os.environ.get("OPENAI_KEY")
 
     FALLBACK_MODELS = [
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "gpt-4-turbo",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "o1-mini",
-        "o1-preview"
+        "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo",
+        "gpt-4o", "gpt-4o-mini", "o1-mini", "o1-preview",
     ]
 
+    api_key = os.environ.get("OPENAI_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return [{"id": m, "responsive": False, "reason": "no_key"} for m in FALLBACK_MODELS]
 
     client = openai.OpenAI(api_key=api_key)
 
-    # Step 1: Try listing models — if this fails with auth error, key is bad
     try:
         models_response = client.models.list()
         chat_models = sorted([
@@ -102,31 +97,29 @@ def get_available_models(db: Session = Depends(get_db)):
             and "vision" not in m.id and "audio" not in m.id and "realtime" not in m.id
         ])[:15]
     except openai.AuthenticationError:
-        # Key is invalid — return fallback list with key_invalid reason, no pinging
         return [{"id": m, "responsive": False, "reason": "invalid_key"} for m in FALLBACK_MODELS]
     except Exception as e:
-        print("Model list error:", e)
+        print(f"[services] OpenAI model list error: {e}")
         chat_models = FALLBACK_MODELS
 
-    # Step 2: Ping each model concurrently
-    def test_model(model_id):
+    def ping_model(model_id):
         try:
             client.chat.completions.create(
                 model=model_id,
                 messages=[{"role": "user", "content": "1"}],
                 max_tokens=1,
-                timeout=5.0
+                timeout=5.0,
             )
             return {"id": model_id, "responsive": True}
         except openai.AuthenticationError:
             return {"id": model_id, "responsive": False, "reason": "invalid_key"}
-        except Exception as e:
-            return {"id": model_id, "responsive": False, "reason": "unresponsive", "error": str(e)}
+        except Exception:
+            return {"id": model_id, "responsive": False, "reason": "unresponsive"}
 
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         for future in concurrent.futures.as_completed(
-            {executor.submit(test_model, mid): mid for mid in chat_models}
+            {executor.submit(ping_model, mid): mid for mid in chat_models}
         ):
             results.append(future.result())
 
@@ -186,14 +179,13 @@ def test_service(service_id: int, db: Session = Depends(get_db)):
     """Ping the service's model to verify it is reachable."""
     service = _get_or_404(service_id, db)
 
-    api_key = os.environ.get("OPENAI_KEY")
+    api_key = os.environ.get("OPENAI_KEY") or os.environ.get("OPENAI_API_KEY")
     start = time.time()
 
     try:
-        # Use service's base_url if provided, else default to OpenAI
         client = openai.OpenAI(
             api_key=api_key,
-            base_url=service.base_url if service.base_url else None
+            base_url=service.base_url if service.base_url else None,
         )
         client.chat.completions.create(
             model=service.model_name,

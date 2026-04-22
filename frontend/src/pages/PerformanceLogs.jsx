@@ -3,14 +3,11 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts';
 import api from '../api.js';
+import EvaluationDashboard from '../components/EvaluationDashboard.jsx';
 
 const BENCHMARKS = [
-  { key: 'graphwalks', label: 'Graphwalks', color: '#3b82f6' },
-  { key: 'alpacaeval', label: 'AlpacaEval', color: '#ec4899' },
-  { key: 'cruxeval',   label: 'CRUXEval', color: '#f97316' },
-  { key: 'agentharm',  label: 'AgentHarm', color: '#ef4444' },
-  { key: 'videomme',   label: 'Video-MME', color: '#a855f7' },
-  { key: 'colbench',   label: 'ColBench', color: '#14b8a6' },
+  { key: 'single_turn', label: 'Single-Turn', color: '#4f46e5' },
+  { key: 'multi_turn',  label: 'Multi-Turn',  color: '#9333ea' },
 ];
 
 const METRICS = [
@@ -31,21 +28,18 @@ function StatusBadge({ score }) {
 }
 
 export default function PerformanceLogs() {
+  const [pageView, setPageView]       = useState('logs');  // 'logs' | 'eval_dashboard'
   const [services, setServices]       = useState([]);
   const [selected, setSelected]       = useState(null);
   const [logs, setLogs]               = useState([]);
   const [loading, setLoading]         = useState(false);
   const [servicesLoading, setServicesLoading] = useState(true);
-  const [viewMode, setViewMode]       = useState('by_benchmark'); // 'by_benchmark' | 'by_metric'
-  const [activeBenchmark, setActiveBenchmark] = useState('alpacaeval');
+  const [viewMode, setViewMode]       = useState('by_benchmark');
+  const [activeBenchmark, setActiveBenchmark] = useState('single_turn');
   const [activeMetric, setActiveMetric] = useState('quality_score');
   const [visibleLines, setVisibleLines] = useState({});
   const [search, setSearch]           = useState('');
   const [tableBenchmarkFilter, setTableBenchmarkFilter] = useState('all');
-  const [activeTab, setActiveTab]     = useState('evals');   // 'evals' | 'judge'
-  const [judgeHistory, setJudgeHistory] = useState([]);
-  const [judgeLoading, setJudgeLoading] = useState(false);
-  const [expandedRaw, setExpandedRaw] = useState(null);
   const [expandedEval, setExpandedEval] = useState(null);
 
   // Fetch all services on mount
@@ -71,16 +65,6 @@ export default function PerformanceLogs() {
         setLogs([]);
       } finally {
         setLoading(false);
-      }
-
-      setJudgeLoading(true);
-      try {
-        const r2 = await api.get(`/drift-judge/${selected.id}`);
-        setJudgeHistory(r2.data || []);
-      } catch {
-        setJudgeHistory([]);
-      } finally {
-        setJudgeLoading(false);
       }
     };
     fetchSelectedData();
@@ -113,13 +97,13 @@ export default function PerformanceLogs() {
     };
     
     if (viewMode === 'by_benchmark') {
-      if ((e.dataset_type || 'alpacaeval') === activeBenchmark) {
+      if ((e.dataset_type || 'single_turn') === activeBenchmark) {
          METRICS.forEach(m => base[m.key] = m.key === 'latency_ms' ? e[m.key] : parseFloat((e[m.key] || 0).toFixed(1)));
          return base;
       }
       return null;
     } else {
-      base[e.dataset_type || 'alpacaeval'] = activeMetric === 'latency_ms' ? e[activeMetric] : parseFloat((e[activeMetric] || 0).toFixed(1));
+      base[e.dataset_type || 'single_turn'] = activeMetric === 'latency_ms' ? e[activeMetric] : parseFloat((e[activeMetric] || 0).toFixed(1));
       return base;
     }
   }).filter(Boolean);
@@ -128,7 +112,7 @@ export default function PerformanceLogs() {
   const filteredLogs = logs.filter(e => {
     const ts = new Date(e.timestamp).toLocaleString().toLowerCase();
     const searchMatch = ts.includes(search.toLowerCase()) || String(e.quality_score).includes(search);
-    const bmMatch = tableBenchmarkFilter === 'all' || (e.dataset_type || 'alpacaeval') === tableBenchmarkFilter;
+    const bmMatch = tableBenchmarkFilter === 'all' || (e.dataset_type || 'single_turn') === tableBenchmarkFilter;
     return searchMatch && bmMatch;
   });
 
@@ -138,14 +122,31 @@ export default function PerformanceLogs() {
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Performance Logs</h1>
-          <p className="text-slate-500 mt-1 text-base">Evaluation history, quality scores, and latency trends per service.</p>
+        <div className="mb-6">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Performance & Evaluations</h1>
+          <p className="text-slate-500 mt-1 text-base">Run evaluations, view logs, and monitor model performance.</p>
+        </div>
+
+        {/* Top-level page tabs */}
+        <div className="flex gap-1 mb-6 border-b border-gray-200">
+          {[{ key: 'eval_dashboard', label: '📊 Evaluation Dashboard' }, { key: 'logs', label: '📋 Performance Logs' }].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setPageView(tab.key)}
+              className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+                pageView === tab.key
+                  ? 'border-indigo-600 text-indigo-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex gap-6">
 
-          {/* Sidebar — service picker */}
+          {/* Sidebar — service picker (shared between tabs) */}
           <aside className="w-56 shrink-0">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <p className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Services</p>
@@ -180,6 +181,12 @@ export default function PerformanceLogs() {
           {/* Main content */}
           <div className="flex-1 min-w-0 flex flex-col gap-5">
 
+            {/* Evaluation Dashboard Tab */}
+            {pageView === 'eval_dashboard' && <EvaluationDashboard service={selected} />}
+
+            {/* Performance Logs Tab */}
+            {pageView === 'logs' && (
+            <>
             {/* Service Metadata */}
             {selected && (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center justify-between text-sm flex-wrap gap-4">
@@ -206,182 +213,12 @@ export default function PerformanceLogs() {
               </div>
             )}
 
-            {/* Chart */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-              
-              {/* Controls Header */}
-              <div className="flex flex-col gap-4 mb-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-gray-700">
-                    {selected ? `${selected.name} — Trends` : 'Select a service'}
-                  </h2>
-                  <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button
-                      onClick={() => setViewMode('by_benchmark')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'by_benchmark' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      View by Benchmark
-                    </button>
-                    <button
-                      onClick={() => setViewMode('by_metric')}
-                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${viewMode === 'by_metric' ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      View by Metric
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="flex gap-3 items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    {viewMode === 'by_benchmark' ? 'Select Benchmark:' : 'Select Metric:'}
-                  </span>
-                  <div className="flex gap-2 flex-wrap">
-                    {(viewMode === 'by_benchmark' ? BENCHMARKS : METRICS).map((item) => (
-                      <button
-                        key={item.key}
-                        onClick={() => viewMode === 'by_benchmark' ? setActiveBenchmark(item.key) : setActiveMetric(item.key)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
-                          (viewMode === 'by_benchmark' ? activeBenchmark : activeMetric) === item.key
-                            ? 'text-white border-transparent shadow-sm'
-                            : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-                        }`}
-                        style={(viewMode === 'by_benchmark' ? activeBenchmark : activeMetric) === item.key ? { backgroundColor: item.color, borderColor: item.color } : {}}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {loading ? (
-                <div className="h-64 flex items-center justify-center text-gray-400 animate-pulse text-sm">
-                  Loading chart…
-                </div>
-              ) : chartData.length === 0 ? (
-                <div className="h-64 flex items-center justify-center text-gray-400 text-sm border-2 border-dashed rounded-lg">
-                  No evaluation data matched for this view.
-                </div>
-              ) : (
-                <>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData} margin={{ top: 5, right: 16, bottom: 5, left: -10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis
-                          dataKey="time"
-                          stroke="#94a3b8"
-                          fontSize={11}
-                          tick={{ fill: '#475569', fontWeight: 500 }}
-                          tickLine={false}
-                          axisLine={{ stroke: '#e2e8f0' }}
-                          dy={8}
-                        />
-                        <YAxis
-                          stroke="#94a3b8"
-                          fontSize={11}
-                          tick={{ fill: '#475569' }}
-                          tickLine={false}
-                          axisLine={false}
-                          domain={['auto', 'auto']}
-                        />
-                        <Tooltip
-                          contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.07)' }}
-                          labelStyle={{ fontWeight: 700, color: '#1e293b', marginBottom: 4 }}
-                          labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                          formatter={(val, name) => {
-                            if (viewMode === 'by_benchmark') {
-                              const m = METRICS.find(x => x.key === name || x.label === name);
-                              return [`${val != null ? val : '—'}${m ? m.unit : ''}`, m ? m.label : name];
-                            } else {
-                              const metric = METRICS.find(x => x.key === activeMetric);
-                              const b = BENCHMARKS.find(x => x.key === name || x.label === name);
-                              return [`${val != null ? val : '—'}${metric ? metric.unit : ''}`, b ? b.label : name];
-                            }
-                          }}
-                        />
-                        {(viewMode === 'by_benchmark' ? METRICS : BENCHMARKS).filter(item => visibleLines[item.key]).map(item => (
-                          <Line
-                            key={item.key}
-                            type="monotone"
-                            dataKey={item.key}
-                            name={item.label}
-                            stroke={item.color}
-                            strokeWidth={2.5}
-                            dot={{ r: 3, fill: item.color, strokeWidth: 2, stroke: '#fff' }}
-                            activeDot={{ r: 6 }}
-                            animationDuration={800}
-                            connectNulls
-                          />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-
-                  {/* Checklist Legend */}
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Visible Lines</p>
-                      <button 
-                        onClick={toggleAllLines}
-                        className="text-[11px] font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-widest transition-colors px-2 py-1 rounded hover:bg-indigo-50"
-                      >
-                        {isAllSelected ? 'Deselect All' : 'Select All'}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-x-6 gap-y-3 px-2">
-                      {(viewMode === 'by_benchmark' ? METRICS : BENCHMARKS).map(item => (
-                        <label key={item.key} className="flex items-center gap-2.5 text-sm cursor-pointer select-none group">
-                          <div className="relative flex items-center justify-center">
-                            <input 
-                              type="checkbox"
-                              checked={!!visibleLines[item.key]}
-                              onChange={() => toggleLine(item.key)}
-                              className="w-4 h-4 rounded border-gray-300 transition-colors cursor-pointer appearance-none checked:border-transparent"
-                              style={{ 
-                                backgroundColor: visibleLines[item.key] ? item.color : '#fff',
-                                borderColor: visibleLines[item.key] ? item.color : '#d1d5db'
-                              }}
-                            />
-                            {visibleLines[item.key] && (
-                              <svg className="w-3 h-3 absolute text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <span className={`font-semibold transition-colors ${visibleLines[item.key] ? 'text-gray-700' : 'text-gray-400'}`}>
-                            {item.label}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Tabs */}
+            {/* Section Header */}
             <div className="flex gap-1 border-b border-gray-200 mb-1">
-              {[{ key: 'evals', label: 'Evaluation History' }, { key: 'judge', label: 'Drift Judge History' }].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                    activeTab === tab.key
-                      ? 'border-indigo-600 text-indigo-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {tab.label}
-                  {tab.key === 'judge' && judgeHistory.length > 0 && (
-                    <span className="ml-1.5 bg-indigo-100 text-indigo-700 text-xs font-bold px-1.5 py-0.5 rounded-full">{judgeHistory.length}</span>
-                  )}
-                </button>
-              ))}
+              <span className="px-4 py-2 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-700">Evaluation History</span>
             </div>
 
-            {/* Evaluation History Tab */}
-            {activeTab === 'evals' && (
+            {/* Evaluation History */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">
@@ -438,7 +275,7 @@ export default function PerformanceLogs() {
                         } catch {
                           // ignore json parse error
                         }
-                        const btype = e.dataset_type || 'alpacaeval';
+                        const btype = e.dataset_type || 'single_turn';
                         const benchmark = BENCHMARKS.find(x => x.key === btype);
 
                         return (
@@ -526,74 +363,12 @@ export default function PerformanceLogs() {
                 </div>
               )}
             </div>
-            )}
-
-            {/* Drift Judge History Tab */}
-            {activeTab === 'judge' && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-bold text-gray-700">
-                  Drift Judge History {selected ? `— ${selected.name}` : ''}
-                  {judgeHistory.length > 0 && <span className="ml-2 text-xs font-normal text-gray-400">({judgeHistory.length} runs)</span>}
-                </h2>
-              </div>
-              {judgeLoading ? (
-                <p className="text-sm text-gray-400 animate-pulse px-5 py-6">Loading…</p>
-              ) : judgeHistory.length === 0 ? (
-                <p className="text-sm text-gray-400 px-5 py-6">No drift judge runs yet. Use the LLM Drift Judge panel on the Dashboard.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-500 uppercase text-xs tracking-wide">
-                      <tr>
-                        {['Timestamp', 'Judge', 'Drift', 'Shift Type', 'Severity', 'Keyword', 'Reason', 'Raw'].map(h => (
-                          <th key={h} className="px-4 py-3 text-left font-semibold whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {judgeHistory.map(r => (
-                        <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{new Date(r.timestamp).toLocaleString()}</td>
-                          <td className="px-4 py-3 text-gray-700 font-medium whitespace-nowrap text-xs">{r.judge_model}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                              r.drift_detected === 'Major' ? 'bg-red-100 text-red-700' :
-                              r.drift_detected === 'Minor' ? 'bg-yellow-100 text-yellow-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>{r.drift_detected}</span>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600 text-xs">{r.shift_type}</td>
-                          <td className="px-4 py-3 font-bold text-center tabular-nums">
-                            <span className={`${
-                              r.severity_score >= 7 ? 'text-red-600' :
-                              r.severity_score >= 4 ? 'text-yellow-600' : 'text-green-600'
-                            }`}>{r.severity_score}/10</span>
-                          </td>
-                          <td className="px-4 py-3 font-mono text-indigo-700 text-xs">{r.top_new_keyword || '—'}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate" title={r.short_reason}>{r.short_reason || '—'}</td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => setExpandedRaw(expandedRaw === r.id ? null : r.id)}
-                              className="text-xs text-indigo-600 hover:underline"
-                            >
-                              {expandedRaw === r.id ? 'Hide' : 'View'}
-                            </button>
-                            {expandedRaw === r.id && (
-                              <pre className="mt-2 text-xs bg-gray-900 text-green-300 rounded p-2 whitespace-pre-wrap max-w-xs overflow-auto max-h-40">{r.raw_response}</pre>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            </>
             )}
 
           </div>
         </div>
+
       </div>
     </div>
   );
