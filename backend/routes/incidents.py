@@ -13,9 +13,11 @@ from dotenv import load_dotenv
 try:
     from database import get_db
     from models import Service, Incident, AuditLog
+    from auth import get_optional_user
 except ImportError:
     from ..database import get_db
     from ..models import Service, Incident, AuditLog
+    from ..auth import get_optional_user
 
 # Load environment variables (such as OPENAI_KEY from .env)
 load_dotenv()
@@ -51,17 +53,18 @@ class OpenTicketData(BaseModel):
     summary_text: str
 
 
+def _uid(user): return user.id if user else None
+def _uname(user): return user.username if user else "system"
+
 # --- Routes ---
 
 @router.post("")
 @router.post("/")
-def create_incident(data: IncidentCreate, db: Session = Depends(get_db)):
-    """Create incident, save to DB, return it."""
-    # Validate the associated service exists
+def create_incident(data: IncidentCreate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     service = db.query(Service).filter(Service.id == data.service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-        
+
     new_incident = Incident(
         service_id=data.service_id,
         severity=data.severity,
@@ -72,11 +75,11 @@ def create_incident(data: IncidentCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_incident)
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="incident.create",
         resource=f"incidents/{new_incident.id}",
         details=(
-            f"Incident #{new_incident.id} created | "
+            f"Incident #{new_incident.id} created by {_uname(current_user)} | "
             f"Service: {service.name} ({service.environment}) | "
             f"Severity: {new_incident.severity.upper()} | "
             f"Symptoms: {new_incident.symptoms[:120]}{'...' if len(new_incident.symptoms) > 120 else ''} | "
@@ -117,7 +120,7 @@ def get_incident(incident_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{incident_id}/checklist")
-def update_checklist(incident_id: int, checklist: ChecklistUpdate, db: Session = Depends(get_db)):
+def update_checklist(incident_id: int, checklist: ChecklistUpdate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Save ChecklistUpdate as JSON to checklist_json column, return updated incident."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
@@ -130,12 +133,12 @@ def update_checklist(incident_id: int, checklist: ChecklistUpdate, db: Session =
     db.refresh(incident)
     checked_items = [k for k, v in checklist.model_dump().items() if v]
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="incident.checklist_update",
         resource=f"incidents/{incident_id}",
         details=(
-            f"Incident #{incident_id} checklist updated | "
-            f"Checked items: {', '.join(checked_items) if checked_items else 'none'}"
+            f"Incident #{incident_id} checklist updated by {_uname(current_user)} | "
+            f"Flagged: {', '.join(checked_items) if checked_items else 'none'}"
         ),
         timestamp=datetime.utcnow()
     )
@@ -209,7 +212,7 @@ def generate_summary(incident_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{incident_id}/approve-summary")
-def approve_summary(incident_id: int, summary: SummaryApprove, db: Session = Depends(get_db)):
+def approve_summary(incident_id: int, summary: SummaryApprove, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Save summary_text to llm_summary column, set approved=True, return updated incident."""
     incident = (
         db.query(Incident)
@@ -241,12 +244,12 @@ def approve_summary(incident_id: int, summary: SummaryApprove, db: Session = Dep
     db.commit()
     db.refresh(incident)
     audit = AuditLog(
-        user_id=None,
-        action="incident.summary_approved",
+        user_id=_uid(current_user),
+        action="incident.closed",
         resource=f"incidents/{incident_id}",
         details=(
-            f"Incident #{incident_id} post-mortem approved | "
-            f"Summary: {summary.summary_text[:150]}{'...' if len(summary.summary_text) > 150 else ''}"
+            f"Incident #{incident_id} closed by {_uname(current_user)} | "
+            f"Post-mortem: {summary.summary_text[:150]}{'...' if len(summary.summary_text) > 150 else ''}"
         ),
         timestamp=datetime.utcnow()
     )
@@ -256,7 +259,7 @@ def approve_summary(incident_id: int, summary: SummaryApprove, db: Session = Dep
 
 
 @router.put("/{incident_id}/open-ticket")
-def open_ticket(incident_id: int, data: OpenTicketData, db: Session = Depends(get_db)):
+def open_ticket(incident_id: int, data: OpenTicketData, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Save AI summary and transition a pending incident to open status."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
@@ -270,11 +273,11 @@ def open_ticket(incident_id: int, data: OpenTicketData, db: Session = Depends(ge
     db.refresh(incident)
 
     audit = AuditLog(
-        user_id=None,
-        action="incident.ticket_opened",
+        user_id=_uid(current_user),
+        action="incident.opened",
         resource=f"incidents/{incident_id}",
         details=(
-            f"Incident #{incident_id} confirmed and opened as active ticket | "
+            f"Incident #{incident_id} opened as active ticket by {_uname(current_user)} | "
             f"Summary: {data.summary_text[:150]}{'...' if len(data.summary_text) > 150 else ''}"
         ),
         timestamp=datetime.utcnow()
@@ -285,7 +288,7 @@ def open_ticket(incident_id: int, data: OpenTicketData, db: Session = Depends(ge
 
 
 @router.put("/{incident_id}/reopen")
-def reopen_incident(incident_id: int, db: Session = Depends(get_db)):
+def reopen_incident(incident_id: int, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Reopen a closed incident, resetting it to open status."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
@@ -300,10 +303,10 @@ def reopen_incident(incident_id: int, db: Session = Depends(get_db)):
     db.refresh(incident)
 
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="incident.reopened",
         resource=f"incidents/{incident_id}",
-        details=f"Incident #{incident_id} reopened for further investigation.",
+        details=f"Incident #{incident_id} reopened by {_uname(current_user)} for further investigation.",
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -312,7 +315,7 @@ def reopen_incident(incident_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{incident_id}/details")
-def update_incident_details(incident_id: int, updates: IncidentUpdate, db: Session = Depends(get_db)):
+def update_incident_details(incident_id: int, updates: IncidentUpdate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Update symptoms and timeline during active investigation."""
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
@@ -332,10 +335,14 @@ def update_incident_details(incident_id: int, updates: IncidentUpdate, db: Sessi
     db.refresh(incident)
     
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="incident.details_updated",
         resource=f"incidents/{incident_id}",
-        details=f"Technical details (symptoms/timeline) updated for Incident #{incident_id} during investigation.",
+        details=(
+            f"Incident #{incident_id} details updated by {_uname(current_user)} | "
+            f"Symptoms: {updates.symptoms[:100]}{'...' if len(updates.symptoms) > 100 else ''} | "
+            f"Timeline: {updates.timeline[:80]}{'...' if len(updates.timeline) > 80 else ''}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)

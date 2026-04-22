@@ -8,9 +8,14 @@ from datetime import datetime
 try:
     from database import get_db
     from models import Maintenance, AuditLog, Incident
+    from auth import get_optional_user
 except ImportError:
     from ..database import get_db
     from ..models import Maintenance, AuditLog, Incident
+    from ..auth import get_optional_user
+
+def _uid(user): return user.id if user else None
+def _uname(user): return user.username if user else "system"
 
 # Initialize router endpoint prefix and tags
 router = APIRouter(prefix="/maintenance", tags=["Maintenance"])
@@ -51,7 +56,7 @@ class MaintenanceUpdate(BaseModel):
 
 @router.post("", response_model=MaintenanceOut)
 @router.post("/", response_model=MaintenanceOut)
-def create_maintenance_plan(plan_data: MaintenanceCreate, db: Session = Depends(get_db)):
+def create_maintenance_plan(plan_data: MaintenanceCreate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Create a maintenance plan, save to DB, and return it."""
     # Instantiate ORM model from parsed Pydantic data
     new_plan = Maintenance(
@@ -72,11 +77,11 @@ def create_maintenance_plan(plan_data: MaintenanceCreate, db: Session = Depends(
     service_env = incident.service.environment if incident and incident.service else "Unknown"
 
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="maintenance.create",
         resource=f"maintenance/{new_plan.id}",
         details=(
-            f"Maintenance plan #{new_plan.id} created | "
+            f"Maintenance plan #{new_plan.id} created by {_uname(current_user)} | "
             f"Incident: #{new_plan.incident_id} | "
             f"Service: {service_name} ({service_env}) | "
             f"Risk: {new_plan.risk_level.upper()} | "
@@ -107,7 +112,7 @@ def get_maintenance_plan(plan_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{plan_id}/schedule")
-def update_maintenance_schedule(plan_id: int, schedule: ScheduleUpdate, db: Session = Depends(get_db)):
+def update_maintenance_schedule(plan_id: int, schedule: ScheduleUpdate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Parse next_eval_date string to datetime, save to next_eval_date column, return updated plan."""
     plan = db.query(Maintenance).filter(Maintenance.id == plan_id).first()
     if not plan:
@@ -132,11 +137,11 @@ def update_maintenance_schedule(plan_id: int, schedule: ScheduleUpdate, db: Sess
     service_env = incident.service.environment if incident and incident.service else "Unknown"
 
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="maintenance.schedule_update",
         resource=f"maintenance/{plan_id}",
         details=(
-            f"Maintenance plan #{plan_id} schedule updated | "
+            f"Maintenance plan #{plan_id} schedule set by {_uname(current_user)} | "
             f"Service: {service_name} ({service_env}) | "
             f"Next evaluation: {parsed_datetime.strftime('%Y-%m-%d %H:%M UTC')}"
         ),
@@ -148,7 +153,7 @@ def update_maintenance_schedule(plan_id: int, schedule: ScheduleUpdate, db: Sess
 
 
 @router.put("/{plan_id}/approve")
-def approve_maintenance_plan(plan_id: int, db: Session = Depends(get_db)):
+def approve_maintenance_plan(plan_id: int, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Set approved=True, return updated plan."""
     plan = db.query(Maintenance).filter(Maintenance.id == plan_id).first()
     if not plan:
@@ -165,11 +170,11 @@ def approve_maintenance_plan(plan_id: int, db: Session = Depends(get_db)):
     service_env = incident.service.environment if incident and incident.service else "Unknown"
 
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="maintenance.approved",
         resource=f"maintenance/{plan_id}",
         details=(
-            f"Maintenance plan #{plan_id} approved | "
+            f"Maintenance plan #{plan_id} approved by {_uname(current_user)} | "
             f"Service: {service_name} ({service_env}) | "
             f"Risk: {plan.risk_level.upper()}"
         ),
@@ -181,7 +186,7 @@ def approve_maintenance_plan(plan_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{plan_id}")
-def update_maintenance_plan(plan_id: int, updates: MaintenanceUpdate, db: Session = Depends(get_db)):
+def update_maintenance_plan(plan_id: int, updates: MaintenanceUpdate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Universal update for maintenance plan fields."""
     plan = db.query(Maintenance).filter(Maintenance.id == plan_id).first()
     if not plan:
@@ -212,10 +217,10 @@ def update_maintenance_plan(plan_id: int, updates: MaintenanceUpdate, db: Sessio
     service_env = incident.service.environment if incident and incident.service else "Unknown"
 
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="maintenance.update",
         resource=f"maintenance/{plan_id}",
-        details=f"Maintenance plan #{plan_id} updated | Service: {service_name} ({service_env})",
+        details=f"Maintenance plan #{plan_id} updated by {_uname(current_user)} | Service: {service_name} ({service_env})",
         timestamp=datetime.utcnow()
     )
     db.add(audit)

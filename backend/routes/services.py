@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Service, AuditLog
+from auth import get_optional_user
+
+def _uid(user): return user.id if user else None
+def _uname(user): return user.username if user else "system"
 
 load_dotenv()
 
@@ -48,17 +52,21 @@ def _get_or_404(service_id: int, db: Session) -> Service:
 # ---------------------------------------------------------------------------
 
 @router.post("/", status_code=201)
-def create_service(payload: ServiceCreate, db: Session = Depends(get_db)):
+def create_service(payload: ServiceCreate, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Create and persist a new service."""
     service = Service(**payload.model_dump())
     db.add(service)
     db.commit()
     db.refresh(service)
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="service.create",
         resource=f"services/{service.id}",
-        details=f"Service {service.name} created",
+        details=(
+            f"Service created by {_uname(current_user)} | Name: {service.name} | Owner: {service.owner} | "
+            f"Environment: {service.environment} | Model: {service.model_name} | "
+            f"Sensitivity: {service.data_sensitivity}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -137,6 +145,7 @@ def update_service(
     service_id: int,
     payload: ServiceCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(get_optional_user),
 ):
     """Update an existing service's fields."""
     service = _get_or_404(service_id, db)
@@ -145,10 +154,14 @@ def update_service(
     db.commit()
     db.refresh(service)
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="service.update",
         resource=f"services/{service_id}",
-        details=f"Service {service.id} updated",
+        details=(
+            f"Service updated by {_uname(current_user)} | Name: {service.name} | Owner: {service.owner} | "
+            f"Environment: {service.environment} | Model: {service.model_name} | "
+            f"Sensitivity: {service.data_sensitivity}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)
@@ -157,16 +170,20 @@ def update_service(
 
 
 @router.delete("/{service_id}")
-def delete_service(service_id: int, db: Session = Depends(get_db)):
+def delete_service(service_id: int, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
     """Delete a service by ID."""
     service = _get_or_404(service_id, db)
     db.delete(service)
     db.commit()
     audit = AuditLog(
-        user_id=None,
+        user_id=_uid(current_user),
         action="service.delete",
         resource=f"services/{service_id}",
-        details=f"Service {service_id} deleted",
+        details=(
+            f"Service permanently deleted by {_uname(current_user)} | Name: {service.name} | "
+            f"Owner: {service.owner} | Environment: {service.environment} | "
+            f"Model: {service.model_name}"
+        ),
         timestamp=datetime.utcnow()
     )
     db.add(audit)

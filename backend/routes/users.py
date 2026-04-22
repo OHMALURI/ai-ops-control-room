@@ -1,10 +1,12 @@
+from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Literal
 
 from database import get_db
-from models import User
+from models import User, AuditLog
 from auth import hash_password, verify_password, create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -51,6 +53,18 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
+    db.add(AuditLog(
+        user_id=user.id,
+        action="auth.user_registered",
+        resource=f"auth/users/{user.id}",
+        details=(
+            f"New user registered | Username: {user.username} | "
+            f"Email: {user.email} | Role: {user.role}"
+        ),
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+
     return {
         "id": user.id,
         "username": user.username,
@@ -69,6 +83,16 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
     token = create_access_token(
         data={"sub": str(user.id), "username": user.username, "role": user.role}
     )
+
+    db.add(AuditLog(
+        user_id=user.id,
+        action="auth.login",
+        resource=f"auth/users/{user.id}",
+        details=f"User logged in | Username: {user.username} | Role: {user.role}",
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -103,7 +127,22 @@ def update_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    old_role = user.role
     user.role = payload.role
     db.commit()
     db.refresh(user)
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="auth.role_updated",
+        resource=f"auth/users/{user.id}",
+        details=(
+            f"Role changed for {user.username} | "
+            f"{old_role} → {payload.role} | "
+            f"Changed by: {current_user.username}"
+        ),
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+
     return user

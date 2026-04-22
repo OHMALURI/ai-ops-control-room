@@ -1,19 +1,23 @@
 import { NavLink, useNavigate } from "react-router-dom";
 
-const NAV_LINKS = [
-  { to: "/dashboard",   label: "Dashboard"         },
-  { to: "/registry",    label: "Service Registry"  },
-  { to: "/perf-logs",   label: "Performance Logs"  },
-  { to: "/operations",  label: "Operations"        },
-  { to: "/audit",       label: "Audit Log"         },
-  { to: "/policy",      label: "Data Policy"       },
-  { to: "/users",       label: "User Manager"      },
+const BASE_LINKS = [
+  { to: "/dashboard",  label: "Dashboard"        },
+  { to: "/registry",   label: "Service Registry" },
+  { to: "/perf-logs",  label: "Performance Logs" },
+  { to: "/operations", label: "Operations"       },
+  { to: "/policy",     label: "Data Policy"      },
+];
+
+const ADMIN_LINKS = [
+  { to: "/audit", label: "Audit Log"    },
+  { to: "/users", label: "User Manager" },
 ];
 
 export default function NavBar() {
   const navigate = useNavigate();
   const username = localStorage.getItem("username") || "—";
   const role     = localStorage.getItem("role")     || "—";
+  const NAV_LINKS = role === "admin" ? [...BASE_LINKS, ...ADMIN_LINKS] : BASE_LINKS;
 
   function handleLogout() {
     localStorage.clear();
