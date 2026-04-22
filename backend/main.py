@@ -21,7 +21,7 @@ app = FastAPI(title="AI Operations Control Room")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,6 +60,13 @@ def create_tables():
             conn.commit()
             print("[migration] Added column: services.base_url")
             
+        # Idempotent migration: add post_mortem column to incidents if missing
+        inc_cols = {r[1] for r in conn.execute("PRAGMA table_info(incidents)").fetchall()}
+        if "post_mortem" not in inc_cols:
+            conn.execute("ALTER TABLE incidents ADD COLUMN post_mortem TEXT")
+            conn.commit()
+            print("[migration] Added column: incidents.post_mortem")
+
         # Drop evidently_reports table if it exists
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if "evidently_reports" in tables:

@@ -35,6 +35,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/registry" element={<ServiceRegistry />} />
           <Route path="/operations" element={<Operations />} />
+          <Route path="/maintenance" element={<Operations />} />
           <Route path="/audit" element={<AuditLog />} />
           <Route path="/policy" element={<DataPolicy />} />
           <Route path="/users" element={<UserManager />} />

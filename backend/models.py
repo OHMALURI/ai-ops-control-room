@@ -94,8 +94,9 @@ class Incident(Base):
     severity = Column(String, nullable=False)
     symptoms = Column(String, nullable=False)
     timeline = Column(String, nullable=False)
-    status = Column(String, default="open", nullable=False)
-    llm_summary = Column(String, nullable=True)
+    status = Column(String, default="pending", nullable=False)
+    llm_summary = Column(String, nullable=True)   # incident summary set when ticket is opened
+    post_mortem = Column(String, nullable=True)   # post-mortem narrative set when ticket is closed
     approved = Column(Boolean, default=False, nullable=False)
     checklist_json = Column(String, nullable=True)   # JSON stored as string
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

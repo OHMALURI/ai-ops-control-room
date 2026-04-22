@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api.js';
 
 export default function MaintenancePlanner() {
   const [incidents, setIncidents] = useState([]);
   const [plans, setPlans] = useState([]);
-  
+  const [services, setServices] = useState([]);
+
   // Dashboard Form Context
   const [formData, setFormData] = useState({
     incident_id: '',
@@ -16,15 +18,18 @@ export default function MaintenancePlanner() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState(null);
+  const location = useLocation();
 
   const fetchData = async () => {
     try {
-      const [incidentsRes, plansRes] = await Promise.all([
+      const [incidentsRes, plansRes, servicesRes] = await Promise.all([
         api.get('/incidents'),
-        api.get('/maintenance')
+        api.get('/maintenance'),
+        api.get('/services')
       ]);
       setIncidents(incidentsRes.data);
       setPlans(plansRes.data);
+      setServices(servicesRes.data);
     } catch (err) {
       console.error("Error fetching Maintenance parameters:", err);
     }
@@ -34,10 +39,23 @@ export default function MaintenancePlanner() {
     fetchData();
   }, []);
 
+  // Handle pre-selection from query params
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const incId = params.get('incidentId');
+    if (incId && incidents.length > 0) {
+      const found = incidents.find(i => i.id === parseInt(incId));
+      if (found) {
+        setFormData(prev => ({ ...prev, incident_id: incId }));
+        setSelectedIncident(found);
+      }
+    }
+  }, [location.search, incidents]);
+
   const handleCreatePlan = async (e) => {
     e.preventDefault();
     if (!formData.approvalChecked) return;
-    
+
     setIsSubmitting(true);
     try {
       // Step 1: Initialize Database Model
@@ -101,7 +119,7 @@ export default function MaintenancePlanner() {
   };
 
   const getRiskColoring = (risk) => {
-    switch(risk?.toLowerCase()) {
+    switch (risk?.toLowerCase()) {
       case 'low': return 'bg-green-100 text-green-800 border-green-200';
       case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'high': return 'bg-red-100 text-red-800 border-red-200';
@@ -110,252 +128,290 @@ export default function MaintenancePlanner() {
   };
 
   const getSeverityColor = (sev) => {
-    switch(sev?.toLowerCase()) {
-      case 'low':      return 'bg-green-100 text-green-800 border-green-200';
-      case 'medium':   return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'high':     return 'bg-orange-100 text-orange-800 border-orange-200';
+    switch (sev?.toLowerCase()) {
+      case 'low': return 'bg-green-100 text-green-800 border-green-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'critical': return 'bg-red-100 text-red-800 border-red-200';
-      default:         return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
+  };
+
+  const getServiceName = (serviceId) => {
+    return services.find(s => s.id === serviceId)?.name || `SRV-${serviceId}`;
   };
 
   return (
     <>
-        
-        <div className="mb-4">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Maintenance Planner</h1>
-          <p className="text-slate-500 mt-2 text-md">Configure incident rollout cycles, validate model fixes, and confirm deployment evaluation checkpoints.</p>
+      <div className="mb-4">
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Maintenance Planner</h1>
+        <p className="text-slate-500 mt-2 text-md">Configure incident rollout cycles, validate model fixes, and confirm deployment evaluation checkpoints.</p>
+      </div>
+
+      {/* --- Step 1: Select Incident --- */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8 mb-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">1</div>
+          <h2 className="text-xl font-bold text-slate-800">Select Target Incident</h2>
         </div>
 
-        {/* --- Creation Root Node Form --- */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8">
-          <h2 className="text-xl font-bold text-slate-800 mb-6 border-b border-slate-100 pb-3 flex items-center">
-             <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-             Create Maintenance Plan
-          </h2>
-          <form onSubmit={handleCreatePlan} className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1.5">Choose an incident to create a maintenance plan for</label>
+          <select
+            required
+            className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
+            value={formData.incident_id}
+            onChange={e => {
+              const id = e.target.value;
+              setFormData({ ...formData, incident_id: id });
+              setSelectedIncident(incidents.find(inc => inc.id === parseInt(id)) || null);
+            }}
+          >
+            <option value="" disabled>Select an incident...</option>
+            {incidents.filter(inc => inc.status !== 'closed').map(inc => {
+              const serviceName = getServiceName(inc.service_id);
+              return (
+                <option key={inc.id} value={inc.id}>
+                  Incident #{inc.id} → {serviceName} ({inc.severity.toUpperCase()})
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      </div>
+
+      {/* --- Step 2: Review Incident & Step 3: Create Plan --- */}
+      {selectedIncident && (
+        <>
+          {/* Incident Preview */}
+          <div className="bg-indigo-50 rounded-xl border border-indigo-200 p-6 mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="text-sm font-bold text-indigo-900 uppercase tracking-wider">Incident Details (Read-Only)</h3>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Incident</label>
-                <select 
-                  required
-                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
-                  value={formData.incident_id}
-                  onChange={e => {
-                    const id = e.target.value;
-                    setFormData({...formData, incident_id: id});
-                    setSelectedIncident(incidents.find(inc => inc.id === parseInt(id)) || null);
-                  }}
-                >
-                  <option value="" disabled>Select an incident parameter...</option>
-                  {incidents.map(inc => (
-                    <option key={inc.id} value={inc.id}>
-                      Incident #{inc.id} (Severity: {inc.severity.toUpperCase()}, Service ID: {inc.service_id})
-                    </option>
-                  ))}
-                </select>
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-1">Incident ID</p>
+                <p className="font-mono font-bold text-indigo-900">#{selectedIncident.id}</p>
               </div>
-              
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Expected Risk Level</label>
-                <select 
-                  required
-                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
-                  value={formData.risk_level}
-                  onChange={e => setFormData({...formData, risk_level: e.target.value})}
-                >
-                  <option value="low">Low Risk</option>
-                  <option value="medium">Medium Risk</option>
-                  <option value="high">High Risk</option>
-                </select>
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-1">Service</p>
+                <p className="font-semibold text-indigo-900">{getServiceName(selectedIncident.service_id)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-1">Severity</p>
+                <span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold uppercase ${getSeverityColor(selectedIncident.severity)}`}>
+                  {selectedIncident.severity}
+                </span>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-1">Status</p>
+                <span className={`inline-block px-2 py-0.5 rounded-full border text-xs font-bold ${selectedIncident.approved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                  {selectedIncident.approved ? 'RESOLVED' : 'INVESTIGATING'}
+                </span>
               </div>
             </div>
 
-            {/* Incident Preview Panel — read-only */}
-            {selectedIncident && (
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
-                <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                  Incident Preview (read-only)
-                </h3>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Incident ID</p>
-                    <p className="font-mono font-bold text-slate-800">#{selectedIncident.id}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Severity</p>
-                    <span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold uppercase ${getSeverityColor(selectedIncident.severity)}`}>
-                      {selectedIncident.severity}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Service ID</p>
-                    <p className="text-slate-700">#{selectedIncident.service_id}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Status</p>
-                    <span className={`inline-block px-2 py-0.5 rounded-full border text-xs font-bold ${
-                      selectedIncident.approved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'
-                    }`}>
-                      {selectedIncident.approved ? 'RESOLVED' : 'INVESTIGATING'}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Symptoms</p>
-                    <p className="text-slate-700 bg-white border border-slate-200 rounded p-2 text-xs leading-relaxed">{selectedIncident.symptoms || '—'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Timeline</p>
-                    <p className="text-slate-700 bg-white border border-slate-200 rounded p-2 text-xs leading-relaxed">{selectedIncident.timeline || '—'}</p>
-                  </div>
-                  {selectedIncident.checklist_json && (
-                    <div className="col-span-2">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Checklist</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(JSON.parse(selectedIncident.checklist_json)).map(([key, val]) => (
-                          <span key={key} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                            val ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'
-                          }`}>
-                            {key.replace(/_/g, ' ')}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {selectedIncident.llm_summary && (
-                    <div className="col-span-2">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Post-Mortem Summary</p>
-                      <p className="text-slate-600 bg-white border border-slate-200 rounded p-2 text-xs italic leading-relaxed">{selectedIncident.llm_summary}</p>
-                    </div>
-                  )}
-                </div>
+            {selectedIncident.symptoms && (
+              <div className="mt-4 pt-4 border-t border-indigo-200">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">Symptoms</p>
+                <p className="text-sm text-indigo-900 bg-white p-2 rounded border border-indigo-100">{selectedIncident.symptoms}</p>
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Rollback Plan Constraint</label>
-              <textarea 
-                required
-                rows={2}
-                placeholder="Declare precise steps to revert models to steady state parameter weights if safety failures erupt during post-deployment validation..."
-                className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
-                value={formData.rollback_plan}
-                onChange={e => setFormData({...formData, rollback_plan: e.target.value})}
-              />
+            {selectedIncident.llm_summary && (
+              <div className="mt-4 pt-4 border-t border-indigo-200">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">Incident Summary</p>
+                <p className="text-sm text-indigo-900 bg-white p-3 rounded border border-indigo-100 leading-relaxed">{selectedIncident.llm_summary}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Form to Create Plan */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">2</div>
+              <h2 className="text-xl font-bold text-slate-800">Create Maintenance Plan</h2>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Validation Sandbox Steps</label>
-              <textarea 
-                required
-                rows={2}
-                placeholder="1. Re-query evaluation metrics loop. 2. Verify dataset logic against standard vectors. 3. Monitor unhandled token deviations..."
-                className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
-                value={formData.validation_steps}
-                onChange={e => setFormData({...formData, validation_steps: e.target.value})}
-              />
-            </div>
+            <form onSubmit={handleCreatePlan} className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Expected Risk Level</label>
+                  <select
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
+                    value={formData.risk_level}
+                    onChange={e => setFormData({ ...formData, risk_level: e.target.value })}
+                  >
+                    <option value="low">Low Risk</option>
+                    <option value="medium">Medium Risk</option>
+                    <option value="high">High Risk</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Next Evaluation Date Checkpoint</label>
-              <input 
-                type="date"
-                required
-                className="w-full md:w-1/2 rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
-                value={formData.next_eval_date}
-                onChange={e => setFormData({...formData, next_eval_date: e.target.value})}
-              />
-            </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">Next Evaluation Date</label>
+                  <input
+                    type="date"
+                    required
+                    className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
+                    value={formData.next_eval_date}
+                    onChange={e => setFormData({ ...formData, next_eval_date: e.target.value })}
+                  />
+                </div>
+              </div>
 
-            {/* Checkbox Constraints */}
-            <div className="flex items-center pt-3 pb-1">
-              <input 
-                id="approval-check"
-                type="checkbox" 
-                className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                checked={formData.approvalChecked}
-                onChange={e => setFormData({...formData, approvalChecked: e.target.checked})}
-              />
-              <label htmlFor="approval-check" className="ml-3 block text-sm font-semibold text-slate-800 cursor-pointer select-none">
-                I have reviewed this plan and approve it for execution
-              </label>
-            </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Rollback Plan Constraint</label>
+                <textarea
+                  required
+                  rows={2}
+                  placeholder="Declare precise steps to revert models to steady state parameter weights if safety failures erupt during post-deployment validation..."
+                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
+                  value={formData.rollback_plan}
+                  onChange={e => setFormData({ ...formData, rollback_plan: e.target.value })}
+                />
+              </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button 
-                type="submit" 
-                disabled={!formData.approvalChecked || isSubmitting}
-                className={`inline-flex justify-center rounded-lg border border-transparent py-2.5 px-6 text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all 
-                  ${!formData.approvalChecked || isSubmitting 
-                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-              >
-                {isSubmitting ? 'Finalizing Configuration...' : 'Initialize Approved Plan'}
-              </button>
-            </div>
-          </form>
-        </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Validation Sandbox Steps</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="1. Re-query evaluation metrics loop. 2. Verify dataset logic against standard vectors. 3. Monitor unhandled token deviations..."
+                  className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
+                  value={formData.validation_steps}
+                  onChange={e => setFormData({ ...formData, validation_steps: e.target.value })}
+                />
+              </div>
 
-        {/* --- Tracked Operational Plans --- */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
-          <h2 className="text-xl font-bold text-slate-800 p-6 border-b border-slate-100 bg-slate-50 flex items-center">
-             Operational Rollouts Directory
-          </h2>
-          
-          {plans.length === 0 ? (
-           <div className="p-10 flex flex-col items-center text-slate-400">
-             <span className="text-sm font-medium">No plans allocated in memory structure.</span>
-           </div>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {plans.map(plan => {
-                const isApproved = plan.approved;
-                const formattedDate = plan.next_eval_date 
-                  ? new Date(plan.next_eval_date).toLocaleDateString() 
-                  : "Unscheduled";
-                
-                return (
-                  <li key={plan.id} className="p-5 sm:px-6 hover:bg-indigo-50/10 flex flex-col md:flex-row md:items-center justify-between transition-colors gap-4">
-                    {/* Data Payload Left Component */}
-                    <div className="flex flex-col md:flex-row md:items-center space-y-3 md:space-y-0 md:space-x-6">
-                      <div className="flex items-center space-x-3">
-                        <span className="font-mono font-bold text-slate-500 text-sm bg-slate-100 px-2 py-1 rounded">
-                          INCIDENT #{plan.incident_id}
+              {/* Approval Checkbox */}
+              <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+                <div className="flex items-start gap-3">
+                  <input
+                    id="approval-check"
+                    type="checkbox"
+                    className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer mt-0.5"
+                    checked={formData.approvalChecked}
+                    onChange={e => setFormData({ ...formData, approvalChecked: e.target.checked })}
+                  />
+                  <label htmlFor="approval-check" className="block text-sm font-semibold text-slate-800 cursor-pointer select-none">
+                    I have reviewed this maintenance plan and approve it for execution
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIncident(null);
+                    setFormData({
+                      incident_id: '',
+                      risk_level: 'low',
+                      rollback_plan: '',
+                      validation_steps: '',
+                      next_eval_date: '',
+                      approvalChecked: false
+                    });
+                  }}
+                  className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!formData.approvalChecked || isSubmitting}
+                  className={`inline-flex justify-center rounded-lg border border-transparent py-2.5 px-8 text-sm font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all
+                      ${!formData.approvalChecked || isSubmitting
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                >
+                  {isSubmitting ? 'Creating Plan...' : 'Create & Approve Plan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* --- All Maintenance Plans Directory --- */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
+        <h2 className="text-xl font-bold text-slate-800 p-6 border-b border-slate-100 bg-slate-50 flex items-center">
+          <svg className="w-5 h-5 mr-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          All Maintenance Plans
+        </h2>
+
+        {plans.length === 0 ? (
+          <div className="p-10 flex flex-col items-center text-slate-400">
+            <span className="text-sm font-medium">No maintenance plans created yet.</span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Incident</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Service</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Risk Level</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Next Evaluation</th>
+                  <th className="px-6 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {plans.map(plan => {
+                  const incident = incidents.find(i => i.id === plan.incident_id);
+                  const serviceName = incident ? getServiceName(incident.service_id) : 'Unknown';
+                  const isApproved = plan.approved;
+                  const formattedDate = plan.next_eval_date
+                    ? new Date(plan.next_eval_date).toLocaleDateString()
+                    : "Unscheduled";
+
+                  return (
+                    <tr key={plan.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className="font-mono font-bold text-slate-700">INC-{plan.incident_id}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-semibold text-slate-700">{serviceName}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-block px-2.5 py-1 rounded border text-xs font-bold uppercase ${getRiskColoring(plan.risk_level)}`}>
+                          {plan.risk_level}
                         </span>
-                        <div className={`px-2.5 py-1 rounded border text-xs font-bold uppercase ${getRiskColoring(plan.risk_level)} shadow-sm tracking-wide text-center`}>
-                          {plan.risk_level} Risk
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-slate-700 font-mono">{formattedDate}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${isApproved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                            {isApproved ? 'APPROVED' : 'PENDING'}
+                          </span>
+                          {!isApproved && (
+                            <button
+                              onClick={() => executeApprovalAction(plan.id)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow-sm transition-colors"
+                            >
+                              Approve
+                            </button>
+                          )}
                         </div>
-                      </div>
-                      
-                      <div className="flex flex-col ml-0 md:ml-4 text-sm">
-                        <p className="font-semibold text-slate-800 mb-0.5 border-l-2 border-indigo-200 pl-2">
-                           Next Evaluation: <span className="font-normal font-mono text-indigo-700">{formattedDate}</span>
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* Status State Parameters Right Component */}
-                    <div className="flex items-center justify-between md:justify-end space-x-4 border-t border-slate-100 md:border-0 pt-3 md:pt-0">
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${isApproved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
-                        {isApproved ? 'APPROVED' : 'PENDING'}
-                      </span>
-                      
-                      {!isApproved && (
-                        <button
-                          onClick={() => executeApprovalAction(plan.id)}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition-colors"
-                        >
-                          Approve
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
     </>
   );
