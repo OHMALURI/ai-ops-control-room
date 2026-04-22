@@ -32,6 +32,11 @@ class UserLogin(BaseModel):
 class RoleUpdate(BaseModel):
     role: Literal["admin", "maintainer", "user"]
 
+class UserUpdate(BaseModel):
+    role: Optional[Literal["admin", "maintainer", "user"]]
+    email: Optional[str]
+    password: Optional[str]
+
 class TempAccessRequest(BaseModel):
     reason: str
     duration_hours: float  # supports fractional hours e.g. 0.083 = 5 min
@@ -141,44 +146,80 @@ def list_users(current_user: User = Depends(get_current_user), db: Session = Dep
     ]
 
 
-@router.put("/users/{username}/role")
-def update_role(
+@router.put("/users/{username}/update")
+def update_user(
     username: str,
-    payload: RoleUpdate,
+    payload: UserUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    eff = get_effective_role(current_user.id, db)
-    if eff != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
     target = db.query(User).filter(User.username == username).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Temp admins cannot touch admin-role users
-    if is_temp_admin(current_user.id, db):
-        if target.role == "admin" or payload.role == "admin":
-            raise HTTPException(
-                status_code=403,
-                detail="Temporary admins cannot modify admin-role accounts."
-            )
+    # Check permissions
+    eff = get_effective_role(current_user.id, db)
+    is_admin = (eff == "admin")
+    is_self = (target.id == current_user.id)
 
-    old_role = target.role
-    target.role = payload.role
+    if not is_admin and not is_self:
+        raise HTTPException(status_code=403, detail="Admin access required to modify other users")
+
+    details = []
+
+    # 1. Update Role (Admin Only, never for self)
+    if payload.role is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Only admins can update roles.")
+        
+        if is_self:
+            raise HTTPException(status_code=400, detail="You cannot change your own role.")
+
+        # Temp admins protection
+        if is_temp_admin(current_user.id, db):
+            if target.role == "admin" or payload.role == "admin":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Temporary admins cannot modify admin-role accounts or promote users to admin."
+                )
+        
+        old_role = target.role
+        target.role = payload.role
+        details.append(f"Role: {old_role} → {payload.role}")
+
+    # 2. Update Email (Admin or Self)
+    if payload.email is not None:
+        if payload.email != target.email:
+            if db.query(User).filter(User.email == payload.email).first():
+                raise HTTPException(status_code=400, detail="Email already taken")
+            old_email = target.email
+            target.email = payload.email
+            details.append(f"Email: {old_email} → {payload.email}")
+
+    # 3. Update Password (Admin or Self)
+    if payload.password is not None and payload.password.strip():
+        target.password_hash = hash_password(payload.password)
+        details.append("Password updated")
+
+    if not details:
+        return target
+
     db.commit()
     db.refresh(target)
 
+    # Use a generic action for non-admin self-updates
+    action = "auth.user_updated" if is_admin else "auth.self_update"
     db.add(AuditLog(
         user_id=current_user.id,
-        action="auth.role_updated",
+        action=action,
         resource=f"auth/users/{target.id}",
-        details=f"Role changed for {target.username} | {old_role} → {payload.role} | By: {current_user.username}",
+        details=f"Updates for {target.username}: {', '.join(details)} | By: {current_user.username}",
         timestamp=datetime.utcnow(),
     ))
     db.commit()
     return target
 
+    return target
 
 # ---------------------------------------------------------------------------
 # Temp admin access
@@ -228,11 +269,20 @@ def list_temp_requests(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """List temp access requests. Admins see all, others see only their own."""
     eff = get_effective_role(current_user.id, db)
-    if eff != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-
-    grants = db.query(TempAdminGrant).order_by(TempAdminGrant.created_at.desc()).all()
+    
+    query = db.query(TempAdminGrant)
+    
+    # If not a full admin, only show own requests
+    if current_user.role != "admin":
+        query = query.filter(TempAdminGrant.user_id == current_user.id)
+    # If a temp admin, they can see all (for auditing) or just their own?
+    # Usually temp admins should be able to see the queue they might be helping with,
+    # but the user said "maintainers should see their requestlogs".
+    # Let's keep it strict: if base role is not admin, filter.
+    
+    grants = query.order_by(TempAdminGrant.created_at.desc()).all()
     result = []
     for g in grants:
         result.append({

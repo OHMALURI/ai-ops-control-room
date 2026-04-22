@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import AuditLog, Evaluation, Incident, Maintenance, User
-from auth import get_current_user
+from auth import get_current_user, get_effective_role
 
 router = APIRouter(prefix="/governance", tags=["Governance"])
 
@@ -52,8 +52,10 @@ def _parse_date(s: Optional[str]) -> Optional[datetime]:
     return datetime.fromisoformat(s.replace("Z", "").replace("z", ""))
 
 
-def _require_admin(user: User):
-    if user.role != "admin":
+def _require_admin(user: User, db: Session):
+    """Check if the user has admin or effective admin privileges."""
+    eff = get_effective_role(user.id, db)
+    if eff != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
@@ -71,7 +73,7 @@ def get_audit_log(
     db: Session = Depends(get_db),
 ):
     """Return audit log entries with optional filters. Admin only."""
-    _require_admin(current_user)
+    _require_admin(current_user, db)
 
     rows = _build_query(
         db,
@@ -90,7 +92,7 @@ def get_distinct_actions(
     db: Session = Depends(get_db),
 ):
     """Return all distinct action strings for the filter dropdown. Admin only."""
-    _require_admin(current_user)
+    _require_admin(current_user, db)
     rows = db.query(AuditLog.action).distinct().all()
     return sorted(r[0] for r in rows)
 
@@ -101,7 +103,7 @@ def get_audit_users(
     db: Session = Depends(get_db),
 ):
     """Return all users that appear in audit log (for filter dropdown). Admin only."""
-    _require_admin(current_user)
+    _require_admin(current_user, db)
     user_ids = (
         db.query(AuditLog.user_id)
         .filter(AuditLog.user_id.isnot(None))
@@ -125,7 +127,7 @@ def download_audit_log(
     db: Session = Depends(get_db),
 ):
     """Download filtered audit log as a JSON file. Admin only."""
-    _require_admin(current_user)
+    _require_admin(current_user, db)
 
     rows = _build_query(
         db,
@@ -169,7 +171,7 @@ def export_compliance(
     db: Session = Depends(get_db),
 ):
     """Export full compliance snapshot as JSON. Admin only."""
-    _require_admin(current_user)
+    _require_admin(current_user, db)
 
     all_audit = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).all()
     payload = {
