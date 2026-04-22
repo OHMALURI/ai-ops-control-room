@@ -34,7 +34,7 @@ def run_all_evaluations():
     try:
         services = db.query(Service).all()
         for service in services:
-            run_evaluation(service.id, db, dataset_type="alpacaeval")
+            run_evaluation(service.id, db, dataset_type="single_turn")
     finally:
         db.close()
 
@@ -43,37 +43,51 @@ def create_tables():
     """Create all database tables and run idempotent migrations on startup."""
     Base.metadata.create_all(bind=engine)
 
-    # Idempotent migration: add dataset_type column if missing
     db_path = os.path.join(os.path.dirname(__file__), "app.db")
     try:
         conn = sqlite3.connect(db_path)
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(evaluations)").fetchall()}
-        if "dataset_type" not in cols:
-            conn.execute("ALTER TABLE evaluations ADD COLUMN dataset_type TEXT")
-            conn.commit()
-            print("[migration] Added column: dataset_type")
 
-        # Idempotent migration: add base_url column to services if missing
+        # ── evaluations table migrations ──────────────────────────────────────
+        eval_cols = {r[1] for r in conn.execute("PRAGMA table_info(evaluations)").fetchall()}
+
+        eval_missing = {
+            "dataset_type":        "TEXT",
+            "drift_type":          "TEXT",
+            "drift_reason":        "TEXT",
+            "drift_triggered":     "INTEGER DEFAULT 0",
+            "accuracy":            "REAL",
+            "relevance_score":     "REAL",
+            "factuality_score":    "REAL",
+            "toxicity_score":      "REAL",
+            "instruction_following": "REAL",
+        }
+        for col, col_type in eval_missing.items():
+            if col not in eval_cols:
+                conn.execute(f"ALTER TABLE evaluations ADD COLUMN {col} {col_type}")
+                conn.commit()
+                print(f"[migration] Added column: evaluations.{col}")
+
+        # ── services table migrations ─────────────────────────────────────────
         svc_cols = {r[1] for r in conn.execute("PRAGMA table_info(services)").fetchall()}
         if "base_url" not in svc_cols:
             conn.execute("ALTER TABLE services ADD COLUMN base_url TEXT")
             conn.commit()
             print("[migration] Added column: services.base_url")
-            
-        # Idempotent migration: add post_mortem column to incidents if missing
+
+        # ── incidents table migrations ────────────────────────────────────────
         inc_cols = {r[1] for r in conn.execute("PRAGMA table_info(incidents)").fetchall()}
         if "post_mortem" not in inc_cols:
             conn.execute("ALTER TABLE incidents ADD COLUMN post_mortem TEXT")
             conn.commit()
             print("[migration] Added column: incidents.post_mortem")
 
-        # Drop evidently_reports table if it exists
+        # ── drop legacy tables ────────────────────────────────────────────────
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if "evidently_reports" in tables:
             conn.execute("DROP TABLE evidently_reports")
             conn.commit()
             print("[migration] Dropped table: evidently_reports")
-            
+
         conn.close()
     except Exception as e:
         print(f"[migration] Warning: {e}")
