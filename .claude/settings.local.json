@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(/c/Users/rithi/OneDrive/Desktop/Projects/ai-ops-control-room/backend/venv/Scripts/python.exe:*)",
+      "Bash(./venv/Scripts/python.exe -c ':*)",
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(xargs grep *)"
+    ]
+  }
+}

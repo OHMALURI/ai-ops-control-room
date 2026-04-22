@@ -1,275 +1,197 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import api from '../api.js';
 
-const ServiceCard = ({ service }) => {
-  const [latestEval, setLatestEval] = useState(null);
-  const [allEvals, setAllEvals] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingInitial, setIsFetchingInitial] = useState(true);
+const FEATURES = [
+  {
+    title: 'Service Registry',
+    desc: 'Register and manage AI/ML models with metadata like owner, environment, data sensitivity, and monitoring tools.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+      </svg>
+    ),
+    color: 'from-blue-500 to-blue-600',
+    link: '/registry',
+  },
+  {
+    title: 'Benchmark Evaluations',
+    desc: 'Run evaluations across 7 benchmark datasets including Graphwalks, AlpacaEval, CRUXEval, and JudgeBench.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+      </svg>
+    ),
+    color: 'from-indigo-500 to-indigo-600',
+    link: '/perf-logs',
+  },
+  {
+    title: 'Drift Detection',
+    desc: 'Detect model drift using LLM-as-a-Judge with Gemini, GPT-5, or Claude Sonnet as evaluators.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+    ),
+    color: 'from-amber-500 to-orange-500',
+    link: '/perf-logs',
+  },
+  {
+    title: 'Operations Center',
+    desc: 'Unified incident and maintenance management — create, resolve, and track operational events in one place.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17l-5.1-5.1m0 0L11.42 4.97m-5.1 5.1H20" />
+      </svg>
+    ),
+    color: 'from-rose-500 to-pink-600',
+    link: '/operations',
+  },
+  {
+    title: 'Audit Log',
+    desc: 'Full audit trail of every action — service changes, evaluations, incident updates, and user activity.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+      </svg>
+    ),
+    color: 'from-emerald-500 to-teal-600',
+    link: '/audit',
+  },
+  {
+    title: 'Data Policy & Users',
+    desc: 'Manage data governance policies and user access controls with role-based permissions.',
+    icon: (
+      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+    color: 'from-violet-500 to-purple-600',
+    link: '/policy',
+  },
+];
 
-  const fetchEvaluations = async () => {
-    try {
-      // Fetch latest evaluation
-      try {
-        const latestRes = await api.get(`/evaluations/latest/${service.id}`);
-        setLatestEval(latestRes.data);
-      } catch (err) {
-        if (err.response && err.response.status === 404) {
-          setLatestEval(null);
-        } else {
-          console.error("Failed to fetch latest evaluation", err);
-        }
-      }
-
-      // Fetch all evaluations for the chart
-      try {
-        const allRes = await api.get(`/evaluations/${service.id}`);
-        setAllEvals(allRes.data || []);
-      } catch (err) {
-        if (err.response && err.response.status === 404) {
-          setAllEvals([]);
-        } else {
-          console.error("Failed to fetch all evaluations", err);
-        }
-      }
-    } finally {
-      setIsFetchingInitial(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchEvaluations();
-  }, [service.id]);
-
-  const handleRunEvaluation = async () => {
-    setIsLoading(true);
-    try {
-      await api.post(`/evaluations/run/${service.id}`);
-      await fetchEvaluations();
-    } catch (err) {
-      console.error("Error running evaluation", err);
-      alert("Failed to run evaluation for " + service.name);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Metrics Logic
-  const qualityScore = latestEval ? `${latestEval.quality_score.toFixed(1)}%` : "No data";
-  const latency = latestEval && latestEval.latency_ms ? `${latestEval.latency_ms}ms` : "No data";
-  
-  // Calculate percentage of evaluations where score is below 50
-  let errorRate = "0%";
-  if (allEvals.length > 0) {
-    const errorCount = allEvals.filter(e => e.quality_score < 50).length;
-    errorRate = `${((errorCount / allEvals.length) * 100).toFixed(1)}%`;
-  }
-
-  const driftDetected = latestEval && latestEval.drift_triggered === true;
-  
-  const envText = service.environment || 'DEV';
-  const isProd = envText.toLowerCase().includes('prod');
-  const badgeColor = isProd ? 'bg-red-100 text-red-800 border-red-200' : 'bg-blue-100 text-blue-800 border-blue-200';
-
-  // Chart Logic - recharts assumes data from left to right (oldest to newest)
-  // The API returns timestamp descending, so we need to reverse the array
-  const chartData = [...allEvals].reverse().map(e => {
-    const dateObj = new Date(e.timestamp);
-    return {
-      time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      fullDate: dateObj.toLocaleString(),
-      score: e.quality_score
-    };
-  });
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
-      <div className="p-6 border-b border-gray-100">
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-3 mb-1">
-              <h3 className="text-xl font-bold text-gray-900 truncate" title={service.name}>
-                {service.name}
-              </h3>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}`}>
-                {envText.toUpperCase()}
-              </span>
-              {driftDetected && (
-                <span className="bg-red-500 text-white px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm animate-pulse">
-                  DRIFT DETECTED
-                </span>
-              )}
-            </div>
-            <p className="text-gray-500 text-sm line-clamp-1" title={service.description}>
-              {service.description || 'No description provided.'}
-            </p>
-          </div>
-          <button 
-            onClick={handleRunEvaluation} 
-            disabled={isLoading || isFetchingInitial}
-            className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center min-w-[150px]"
-          >
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Running...
-              </>
-            ) : (
-              'Run Evaluation'
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="p-6 flex-grow flex flex-col">
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-gray-50 p-4 rounded-lg flex flex-col justify-center border border-gray-100 shadow-sm">
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Quality Score</p>
-            <p className={`text-2xl font-bold ${
-              latestEval 
-                ? (latestEval.quality_score >= 80 ? 'text-green-600' : latestEval.quality_score >= 50 ? 'text-yellow-600' : 'text-red-600') 
-                : 'text-gray-400'
-            }`}>
-              {qualityScore}
-            </p>
-          </div>
-          
-          <div className="bg-gray-50 p-4 rounded-lg flex flex-col justify-center border border-gray-100 shadow-sm">
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Error Rate</p>
-            <p className="text-2xl font-bold text-gray-800">{errorRate}</p>
-          </div>
-          
-          <div className="bg-gray-50 p-4 rounded-lg flex flex-col justify-center border border-gray-100 shadow-sm">
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Latency</p>
-            <p className="text-md font-medium text-gray-400 mt-1">{latency}</p>
-          </div>
-        </div>
-
-        <div className="flex-grow min-h-[220px] w-full mt-2">
-          <h4 className="text-sm font-semibold text-gray-700 mb-4">Quality Score Over Time</h4>
-          {allEvals.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: -20 }}>
-                <XAxis 
-                  dataKey="time" 
-                  stroke="#9ca3af" 
-                  fontSize={12} 
-                  tickLine={false} 
-                  axisLine={false} 
-                  dy={10}
-                />
-                <YAxis 
-                  domain={[0, 100]} 
-                  stroke="#9ca3af" 
-                  fontSize={12} 
-                  tickLine={false} 
-                  axisLine={false} 
-                />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                  labelStyle={{ fontWeight: 'bold', color: '#374151', marginBottom: '4px' }}
-                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="score" 
-                  name="Quality Score"
-                  stroke="#4f46e5" 
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#ffffff' }}
-                  activeDot={{ r: 6, fill: '#4f46e5', stroke: '#ffffff', strokeWidth: 2 }} 
-                  animationDuration={1500}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-             <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-lg text-gray-400 bg-gray-50 pb-6">
-              <svg className="w-8 h-8 text-gray-300 mb-2 mt-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-              </svg>
-              <span className="text-sm font-medium">No evaluation data available</span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
+const TECH_STACK = [
+  { name: 'React', desc: 'Frontend UI', color: '#61DAFB' },
+  { name: 'FastAPI', desc: 'Backend API', color: '#009688' },
+  { name: 'SQLite', desc: 'Database', color: '#003B57' },
+  { name: 'Recharts', desc: 'Visualizations', color: '#8884d8' },
+  { name: 'DeepEval', desc: 'LLM Evaluation', color: '#4f46e5' },
+  { name: 'Ollama', desc: 'Local LLM Judge', color: '#1a1a2e' },
+];
 
 export default function Dashboard() {
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const [stats, setStats] = useState({ services: 0, evaluations: 0, users: 0 });
+  const username = localStorage.getItem('username') || 'Operator';
 
   useEffect(() => {
-    const fetchServices = async () => {
+    const fetchStats = async () => {
       try {
-        const response = await api.get('/services');
-        setServices(response.data);
-      } catch (err) {
-        console.error("Failed to load services", err);
-        setError("Failed to load operations data. Please ensure the backend is running.");
-      } finally {
-        setLoading(false);
-      }
+        const [svc, users] = await Promise.all([
+          api.get('/services').catch(() => ({ data: [] })),
+          api.get('/users/').catch(() => ({ data: [] })),
+        ]);
+        setStats({
+          services: svc.data?.length || 0,
+          users: users.data?.length || 0,
+        });
+      } catch { /* ignore */ }
     };
-
-    fetchServices();
+    fetchStats();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8 flex justify-center items-center">
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600 mb-4"></div>
-          <p className="text-indigo-900 font-medium">Loading Dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8 flex justify-center items-start pt-20">
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-6 rounded-r-lg shadow-sm max-w-2xl w-full">
-          <h3 className="font-bold text-lg mb-2">Connection Error</h3>
-          <p>{error}</p>
-        </div>
-      </div>
-    );
-  }
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-10 px-2 flex justify-between items-end">
-          <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">AI Operations Dashboard</h1>
-            <p className="text-slate-500 mt-2 text-lg">Monitor model performance, detect drift, and manage service health.</p>
+    <div className="min-h-screen bg-slate-50">
+
+      {/* ── Hero Section ── */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-indigo-950 to-gray-900">
+        {/* Decorative blobs */}
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-purple-500/15 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-3xl" />
+
+        <div className="relative max-w-7xl mx-auto px-8 py-16">
+          <p className="text-indigo-300 text-sm font-semibold tracking-widest uppercase mb-3 animate-pulse">
+            {greeting}, {username}
+          </p>
+          <h1 className="text-5xl font-extrabold text-white tracking-tight leading-tight mb-4">
+            AI Ops <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Control Room</span>
+          </h1>
+          <p className="text-xl text-slate-300 max-w-2xl leading-relaxed mb-8">
+            A centralized platform for monitoring, evaluating, and governing AI/ML models in production.
+            Detect drift, run benchmarks, manage incidents, and enforce data policies — all in one place.
+          </p>
+
+          {/* Quick Stats */}
+          <div className="flex gap-6 flex-wrap">
+            {[
+              { label: 'Registered Services', value: stats.services, icon: '🔧' },
+              { label: 'Team Members', value: stats.users, icon: '👥' },
+            ].map(s => (
+              <div key={s.label} className="bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-6 py-4 min-w-[180px]">
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{s.icon} {s.label}</p>
+                <p className="text-3xl font-extrabold text-white tabular-nums">{s.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-8 py-12">
+
+        {/* ── Features Grid ── */}
+        <div className="mb-16">
+          <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Platform Capabilities</h2>
+          <p className="text-slate-500 mb-8">Everything you need to operate AI models safely and reliably.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {FEATURES.map(f => (
+              <button
+                key={f.title}
+                onClick={() => navigate(f.link)}
+                className="group text-left bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-lg hover:border-indigo-200 transition-all duration-300 hover:-translate-y-0.5"
+              >
+                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${f.color} flex items-center justify-center text-white mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                  {f.icon}
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-700 transition-colors">{f.title}</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">{f.desc}</p>
+              </button>
+            ))}
           </div>
         </div>
 
-        {services.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-16 text-center">
-            <svg className="mx-auto h-16 w-16 text-slate-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-            </svg>
-            <h3 className="text-xl font-medium text-slate-900 mb-2">No Services Configured</h3>
-            <p className="text-slate-500 max-w-md mx-auto">
-              You haven't added any services to the registry yet. Head over to the Service Registry to add your first AI model.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            {services.map(service => (
-              <ServiceCard key={service.id} service={service} />
+        {/* ── Tech Stack ── */}
+        <div className="mb-16">
+          <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Tech Stack</h2>
+          <p className="text-slate-500 mb-6">Built with modern, production-grade technologies.</p>
+
+          <div className="flex flex-wrap gap-4">
+            {TECH_STACK.map(t => (
+              <div
+                key={t.name}
+                className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 flex items-center gap-3 hover:shadow-md transition-shadow"
+              >
+                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                <div>
+                  <p className="text-sm font-bold text-slate-800">{t.name}</p>
+                  <p className="text-xs text-slate-400">{t.desc}</p>
+                </div>
+              </div>
             ))}
           </div>
-        )}
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="border-t border-gray-200 pt-8 pb-4 text-center">
+          <p className="text-sm text-slate-400">
+            AI Ops Control Room &middot; Built for enterprise AI governance
+          </p>
+        </div>
       </div>
     </div>
   );

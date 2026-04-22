@@ -15,6 +15,7 @@ export default function MaintenancePlanner() {
     approvalChecked: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedIncident, setSelectedIncident] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -79,6 +80,7 @@ export default function MaintenancePlanner() {
         next_eval_date: '',
         approvalChecked: false
       });
+      setSelectedIncident(null);
     } catch (err) {
       console.error('[MaintenancePlanner] Error initializing plan workflow:', err);
     } finally {
@@ -107,9 +109,18 @@ export default function MaintenancePlanner() {
     }
   };
 
+  const getSeverityColor = (sev) => {
+    switch(sev?.toLowerCase()) {
+      case 'low':      return 'bg-green-100 text-green-800 border-green-200';
+      case 'medium':   return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'high':     return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
+      default:         return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-8">
-      <div className="max-w-5xl mx-auto space-y-8">
+    <>
         
         <div className="mb-4">
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Maintenance Planner</h1>
@@ -130,7 +141,11 @@ export default function MaintenancePlanner() {
                   required
                   className="w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3 border"
                   value={formData.incident_id}
-                  onChange={e => setFormData({...formData, incident_id: e.target.value})}
+                  onChange={e => {
+                    const id = e.target.value;
+                    setFormData({...formData, incident_id: id});
+                    setSelectedIncident(incidents.find(inc => inc.id === parseInt(id)) || null);
+                  }}
                 >
                   <option value="" disabled>Select an incident parameter...</option>
                   {incidents.map(inc => (
@@ -155,6 +170,68 @@ export default function MaintenancePlanner() {
                 </select>
               </div>
             </div>
+
+            {/* Incident Preview Panel — read-only */}
+            {selectedIncident && (
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">
+                <h3 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                  Incident Preview (read-only)
+                </h3>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Incident ID</p>
+                    <p className="font-mono font-bold text-slate-800">#{selectedIncident.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Severity</p>
+                    <span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold uppercase ${getSeverityColor(selectedIncident.severity)}`}>
+                      {selectedIncident.severity}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Service ID</p>
+                    <p className="text-slate-700">#{selectedIncident.service_id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Status</p>
+                    <span className={`inline-block px-2 py-0.5 rounded-full border text-xs font-bold ${
+                      selectedIncident.approved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'
+                    }`}>
+                      {selectedIncident.approved ? 'RESOLVED' : 'INVESTIGATING'}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Symptoms</p>
+                    <p className="text-slate-700 bg-white border border-slate-200 rounded p-2 text-xs leading-relaxed">{selectedIncident.symptoms || '—'}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Timeline</p>
+                    <p className="text-slate-700 bg-white border border-slate-200 rounded p-2 text-xs leading-relaxed">{selectedIncident.timeline || '—'}</p>
+                  </div>
+                  {selectedIncident.checklist_json && (
+                    <div className="col-span-2">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Checklist</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(JSON.parse(selectedIncident.checklist_json)).map(([key, val]) => (
+                          <span key={key} className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                            val ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                          }`}>
+                            {key.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {selectedIncident.llm_summary && (
+                    <div className="col-span-2">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">Post-Mortem Summary</p>
+                      <p className="text-slate-600 bg-white border border-slate-200 rounded p-2 text-xs italic leading-relaxed">{selectedIncident.llm_summary}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Rollback Plan Constraint</label>
@@ -280,7 +357,6 @@ export default function MaintenancePlanner() {
           )}
         </div>
 
-      </div>
-    </div>
+    </>
   );
 }
