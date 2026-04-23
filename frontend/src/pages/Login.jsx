@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api.js";
 
-// Neural network node positions (% of container)
 const NODES = [
   { cx: 12,  cy: 18,  r: 5,  delay: 0    },
   { cx: 35,  cy: 8,   r: 3,  delay: 0.6  },
@@ -27,6 +26,13 @@ const EDGES = [
   [8,12],[9,10],[9,13],[10,11],[10,13],[10,14],[11,12],[11,14],[12,14],[13,14],
 ];
 
+// Build adjacency list
+const ADJACENCY = Array.from({ length: NODES.length }, () => []);
+EDGES.forEach(([a, b]) => {
+  ADJACENCY[a].push(b);
+  ADJACENCY[b].push(a);
+});
+
 export default function Login() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -34,6 +40,98 @@ export default function Login() {
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [showPass, setShowPass] = useState(false);
+
+  // Hover state: which node index is hovered
+  const [hoveredNode, setHoveredNode] = useState(null);
+
+  // Wave state: map of nodeIndex -> { waveId, startTime, delay }
+  // ripples: array of { id, cx, cy, startedAt }
+  const [nodeWaves, setNodeWaves] = useState({});   // nodeIndex -> waveId (for color flash)
+  const [ripples,   setRipples]   = useState([]);   // expanding rings from each node
+  const waveCounter = useRef(0);
+  const timeoutsRef = useRef([]);
+
+  const clearAllTimeouts = useCallback(() => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+  }, []);
+
+  const handleNodeClick = useCallback((clickedIdx) => {
+    clearAllTimeouts();
+    waveCounter.current += 1;
+    const waveId = waveCounter.current;
+
+    // BFS to compute wave delay per node
+    const visited = new Map(); // nodeIndex -> bfsDepth
+    const queue = [clickedIdx];
+    visited.set(clickedIdx, 0);
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      const depth = visited.get(cur);
+      for (const neighbor of ADJACENCY[cur]) {
+        if (!visited.has(neighbor)) {
+          visited.set(neighbor, depth + 1);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    const maxDepth = Math.max(...visited.values());
+    // Stagger: 120ms per BFS level
+    const MS_PER_LEVEL = 120;
+
+    // Schedule flash + ripple for each node
+    visited.forEach((depth, nodeIdx) => {
+      const delay = depth * MS_PER_LEVEL;
+
+      const t = setTimeout(() => {
+        const node = NODES[nodeIdx];
+
+        // Add ripple ring at this node
+        const rippleId = `${waveId}-${nodeIdx}`;
+        setRipples(prev => [...prev, { id: rippleId, cx: node.cx, cy: node.cy, r: node.r }]);
+
+        // Flash node
+        setNodeWaves(prev => ({ ...prev, [nodeIdx]: waveId }));
+
+        // Remove ripple after animation (1.2s)
+        const rt = setTimeout(() => {
+          setRipples(prev => prev.filter(r => r.id !== rippleId));
+        }, 1200);
+        timeoutsRef.current.push(rt);
+
+        // Un-flash node
+        const ft = setTimeout(() => {
+          setNodeWaves(prev => {
+            if (prev[nodeIdx] !== waveId) return prev;
+            const next = { ...prev };
+            delete next[nodeIdx];
+            return next;
+          });
+        }, 600);
+        timeoutsRef.current.push(ft);
+      }, delay);
+
+      timeoutsRef.current.push(t);
+    });
+
+    // After wave completes, add off-screen burst rings from outermost nodes
+    const outerDelay = maxDepth * MS_PER_LEVEL + 80;
+    const bt = setTimeout(() => {
+      visited.forEach((depth, nodeIdx) => {
+        if (depth === maxDepth) {
+          const node = NODES[nodeIdx];
+          const burstId = `burst-${waveId}-${nodeIdx}`;
+          setRipples(prev => [...prev, { id: burstId, cx: node.cx, cy: node.cy, r: node.r, burst: true }]);
+          const ct = setTimeout(() => {
+            setRipples(prev => prev.filter(r => r.id !== burstId));
+          }, 1400);
+          timeoutsRef.current.push(ct);
+        }
+      });
+    }, outerDelay);
+    timeoutsRef.current.push(bt);
+  }, [clearAllTimeouts]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -65,7 +163,7 @@ export default function Login() {
     <div className="min-h-screen flex overflow-hidden">
       <style>{`
         @keyframes pulse-node {
-          0%, 100% { opacity: 0.35; r: attr(r); }
+          0%, 100% { opacity: 0.35; }
           50%       { opacity: 0.9;  }
         }
         @keyframes dash-flow {
@@ -77,25 +175,19 @@ export default function Login() {
           33%     { transform: translateY(-18px) translateX(8px);  opacity: 0.9; }
           66%     { transform: translateY(-8px) translateX(-6px);  opacity: 0.7; }
         }
-        @keyframes wave {
-          0%   { d: path("M0,40 C30,10 60,70 90,40 C120,10 150,70 180,40 C210,10 240,70 270,40 C300,10 330,70 360,40"); }
-          50%  { d: path("M0,40 C30,70 60,10 90,40 C120,70 150,10 180,40 C210,70 240,10 270,40 C300,70 330,10 360,40"); }
-          100% { d: path("M0,40 C30,10 60,70 90,40 C120,10 150,70 180,40 C210,10 240,70 270,40 C300,10 330,70 360,40"); }
-        }
         @keyframes scan-line {
           0%   { transform: translateY(-100%); opacity: 0; }
           10%  { opacity: 1; }
           90%  { opacity: 1; }
           100% { transform: translateY(500px); opacity: 0; }
         }
-        @keyframes blink-cursor {
-          0%,100% { opacity: 1; }
-          50%     { opacity: 0; }
-        }
-        .node-pulse { animation: pulse-node 3s ease-in-out infinite; }
-        .edge-flow  { animation: dash-flow 4s linear infinite; stroke-dasharray: 8 12; }
+        .node-pulse  { animation: pulse-node 3s ease-in-out infinite; }
+        .edge-flow   { animation: dash-flow 4s linear infinite; stroke-dasharray: 8 12; }
         .float-particle { animation: float-up 6s ease-in-out infinite; }
         .scan { animation: scan-line 8s linear infinite; }
+
+        .node-group { cursor: pointer; }
+        @keyframes ecg-trace { from { stroke-dashoffset: 22; } to { stroke-dashoffset: -60; } }
       `}</style>
 
       {/* ── Left Panel: AI Animation ── */}
@@ -107,6 +199,10 @@ export default function Login() {
 
         {/* Neural network SVG */}
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            {/* Ripple rings — rendered as SVG circle elements below */}
+          </defs>
+
           {/* Edges */}
           {EDGES.map(([a, b], i) => (
             <line
@@ -120,28 +216,80 @@ export default function Login() {
               style={{ animationDelay: `${(i * 0.3) % 4}s`, animationDuration: `${3 + (i % 3)}s` }}
             />
           ))}
+
+          {/* Ripple rings */}
+          {ripples.map(({ id, cx, cy, r, burst }) => {
+            const rStart = r * 0.6;
+            const rEnd   = burst ? r * 18 : r * 9;
+            const dur    = burst ? "1.4s" : "1.2s";
+            return (
+              <circle key={id} cx={cx} cy={cy} r={rStart} fill="none"
+                stroke={burst ? "#a5b4fc" : "#818cf8"}
+                strokeWidth={burst ? 1.2 : 0.6}
+              >
+                <animate attributeName="r"    from={rStart} to={rEnd} dur={dur} fill="freeze" />
+                <animate attributeName="opacity" values="0.85;0.5;0" keyTimes="0;0.5;1" dur={dur} fill="freeze" />
+                <animate attributeName="stroke-width" values={burst ? "1.2;0.4;0.05" : "0.6;0.2;0.05"} keyTimes="0;0.6;1" dur={dur} fill="freeze" />
+              </circle>
+            );
+          })}
+
           {/* Nodes */}
-          {NODES.map((n, i) => (
-            <g key={i}>
-              {/* outer glow ring */}
-              <circle
-                cx={n.cx} cy={n.cy} r={n.r * 2.2}
-                fill="#6366f1" fillOpacity="0.06"
-                className="node-pulse"
-                style={{ animationDelay: `${n.delay}s`, animationDuration: `${2.5 + n.delay * 0.4}s` }}
-              />
-              {/* main node */}
-              <circle
-                cx={n.cx} cy={n.cy} r={n.r * 0.6}
-                fill="#6366f1"
-                fillOpacity="0.5"
-                className="node-pulse"
-                style={{ animationDelay: `${n.delay}s`, animationDuration: `${2.5 + n.delay * 0.4}s` }}
-              />
-              {/* inner bright dot */}
-              <circle cx={n.cx} cy={n.cy} r={n.r * 0.25} fill="#a5b4fc" fillOpacity="0.9" />
-            </g>
-          ))}
+          {NODES.map((n, i) => {
+            const isHovered = hoveredNode === i;
+            const isWaving  = nodeWaves[i] != null;
+            const scale     = isHovered ? 1.45 : 1;
+            const glowR     = n.r * 2.2 * scale;
+            const mainR     = n.r * 0.6 * scale;
+            const dotR      = n.r * 0.25 * scale;
+            return (
+              <g
+                key={i}
+                className="node-group"
+                onMouseEnter={() => setHoveredNode(i)}
+                onMouseLeave={() => setHoveredNode(null)}
+                onClick={() => handleNodeClick(i)}
+                style={{ transformOrigin: `${n.cx}px ${n.cy}px` }}
+              >
+                {/* outer glow ring */}
+                <circle
+                  cx={n.cx} cy={n.cy}
+                  r={glowR}
+                  fill={isWaving ? "#818cf8" : "#6366f1"}
+                  fillOpacity={isWaving ? 0.22 : 0.06}
+                  className="node-pulse"
+                  style={{
+                    animationDelay: `${n.delay}s`,
+                    animationDuration: `${2.5 + n.delay * 0.4}s`,
+                    transition: "r 0.15s ease, fill-opacity 0.1s ease",
+                  }}
+                />
+                {/* main node */}
+                <circle
+                  cx={n.cx} cy={n.cy}
+                  r={mainR}
+                  fill={isWaving ? "#a5b4fc" : "#6366f1"}
+                  fillOpacity={isWaving ? 1 : 0.5}
+                  className="node-pulse"
+                  style={{
+                    animationDelay: `${n.delay}s`,
+                    animationDuration: `${2.5 + n.delay * 0.4}s`,
+                    transition: "r 0.15s ease, fill 0.1s ease, fill-opacity 0.1s ease",
+                  }}
+                />
+                {/* inner bright dot */}
+                <circle
+                  cx={n.cx} cy={n.cy}
+                  r={dotR}
+                  fill={isWaving ? "#fff" : "#a5b4fc"}
+                  fillOpacity="0.9"
+                  style={{ transition: "r 0.15s ease, fill 0.1s ease" }}
+                />
+                {/* invisible hit area */}
+                <circle cx={n.cx} cy={n.cy} r={n.r * 1.5} fill="transparent" />
+              </g>
+            );
+          })}
         </svg>
 
         {/* Scan line */}
@@ -165,24 +313,15 @@ export default function Login() {
           </div>
         ))}
 
-        {/* Waveform at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 h-24 flex items-end overflow-hidden opacity-30">
-          <svg viewBox="0 0 360 80" className="w-full" preserveAspectRatio="none">
-            <path d="M0,40 C30,10 60,70 90,40 C120,10 150,70 180,40 C210,10 240,70 270,40 C300,10 330,70 360,40"
-              stroke="#6366f1" strokeWidth="2" fill="none"
-              style={{ animation: "wave 4s ease-in-out infinite" }} />
-            <path d="M0,50 C40,20 80,80 120,50 C160,20 200,80 240,50 C280,20 320,80 360,50"
-              stroke="#818cf8" strokeWidth="1.5" fill="none" opacity="0.5"
-              style={{ animation: "wave 5s ease-in-out infinite reverse" }} />
-          </svg>
-        </div>
-
         {/* Brand text */}
         <div className="relative z-10 p-12 mt-auto">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M3 12h3l2-7 4 14 3-10 2 3h4" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-200 overflow-hidden">
+              <svg className="w-5 h-5" fill="none" stroke="white" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2}
+                  d="M3 12h3l2-7 4 14 3-10 2 3h4"
+                  strokeDasharray="22 60" strokeDashoffset="22"
+                  style={{ animation: "ecg-trace 1.6s linear infinite" }} />
               </svg>
             </div>
             <span className="text-2xl font-black text-slate-800"><span className="text-indigo-600">AI</span> Pulse</span>
@@ -210,9 +349,12 @@ export default function Login() {
 
           {/* Mobile brand */}
           <div className="flex items-center gap-2 mb-10 lg:hidden">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M3 12h3l2-7 4 14 3-10 2 3h4" />
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center overflow-hidden">
+              <svg className="w-4 h-4" fill="none" stroke="white" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2}
+                  d="M3 12h3l2-7 4 14 3-10 2 3h4"
+                  strokeDasharray="22 60" strokeDashoffset="22"
+                  style={{ animation: "ecg-trace 1.6s linear infinite" }} />
               </svg>
             </div>
             <span className="font-black text-slate-800"><span className="text-indigo-600">AI</span> Pulse</span>

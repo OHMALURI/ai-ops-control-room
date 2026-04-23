@@ -80,13 +80,20 @@ export default function NavBar() {
 
   return (
     <nav className="bg-gray-900/95 backdrop-blur border-b border-gray-800 sticky top-0 z-50">
+      <style>{`@keyframes ecg-trace { from { stroke-dashoffset: 22; } to { stroke-dashoffset: -60; } }`}</style>
       <div className="px-6 h-16 flex items-center gap-4">
 
         {/* ── Brand ── */}
         <NavLink to="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-600/20">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M3 12h3l2-7 4 14 3-10 2 3h4" />
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-600/20 overflow-hidden">
+            <svg className="w-5 h-5" fill="none" stroke="white" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2}
+                d="M3 12h3l2-7 4 14 3-10 2 3h4"
+                strokeDasharray="22 60"
+                strokeDashoffset="22"
+                style={{ animation: "ecg-trace 1.6s linear infinite" }}
+              />
             </svg>
           </div>
           <div className="flex items-center gap-1">
