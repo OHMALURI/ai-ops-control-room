@@ -3,6 +3,15 @@ import api from "../api.js";
 
 const ROLES = ["admin", "maintainer", "user"];
 
+function validatePassword(pw) {
+  if (pw.length < 8) return "Password must be at least 8 characters.";
+  if (!/[A-Z]/.test(pw)) return "Password must contain at least one uppercase letter.";
+  if (!/[a-z]/.test(pw)) return "Password must contain at least one lowercase letter.";
+  if (!/\d/.test(pw)) return "Password must contain at least one number.";
+  if (!/[^A-Za-z0-9]/.test(pw)) return "Password must contain at least one special character.";
+  return null;
+}
+
 function roleBadge(role) {
   if (role === "admin") return "bg-indigo-900/50 text-indigo-300 border-indigo-700/50";
   if (role === "maintainer") return "bg-amber-900/40 text-amber-300 border-amber-700/50";
@@ -48,6 +57,10 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
 
   async function handleSave() {
     setSaving(true); setSaved(false); setError("");
+    if (password.trim()) {
+      const pwErr = validatePassword(password);
+      if (pwErr) { setError(pwErr); setSaving(false); return; }
+    }
     try {
       const payload = { email };
       // Only send role if it actually changed (avoids Pydantic error on legacy roles)
@@ -187,6 +200,8 @@ function AdminView({ isTempAdmin }) {
 
   async function handleAddUser(e) {
     e.preventDefault();
+    const pwErr = validatePassword(addForm.password);
+    if (pwErr) { setAddError(pwErr); return; }
     setAdding(true); setAddError("");
     try {
       await api.post("/auth/register", addForm);

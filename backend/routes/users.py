@@ -16,6 +16,30 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 # ---------------------------------------------------------------------------
+# Password policy
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_PASSWORD_POLICY = (
+    "Password must be at least 8 characters and contain at least one uppercase letter, "
+    "one lowercase letter, one number, and one special character."
+)
+
+def _validate_password(password: str):
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail=_PASSWORD_POLICY)
+    if not _re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=422, detail=_PASSWORD_POLICY)
+    if not _re.search(r"[a-z]", password):
+        raise HTTPException(status_code=422, detail=_PASSWORD_POLICY)
+    if not _re.search(r"\d", password):
+        raise HTTPException(status_code=422, detail=_PASSWORD_POLICY)
+    if not _re.search(r"[^A-Za-z0-9]", password):
+        raise HTTPException(status_code=422, detail=_PASSWORD_POLICY)
+
+
+# ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
 
@@ -52,6 +76,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Username already taken")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
+    _validate_password(payload.password)
 
     user = User(
         username=payload.username,
@@ -200,6 +225,7 @@ def update_user(
 
     # 3. Update Password (Admin or Self)
     if payload.password is not None and payload.password.strip():
+        _validate_password(payload.password)
         target.password_hash = hash_password(payload.password)
         if is_admin and not is_self:
             target.force_password_reset = True

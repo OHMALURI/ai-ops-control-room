@@ -10,13 +10,20 @@ export default function ResetPassword() {
   const [error, setError]         = useState("");
   const [loading, setLoading]     = useState(false);
 
+  function validatePassword(pw) {
+    if (pw.length < 8) return "Password must be at least 8 characters.";
+    if (!/[A-Z]/.test(pw)) return "Password must contain at least one uppercase letter.";
+    if (!/[a-z]/.test(pw)) return "Password must contain at least one lowercase letter.";
+    if (!/\d/.test(pw)) return "Password must contain at least one number.";
+    if (!/[^A-Za-z0-9]/.test(pw)) return "Password must contain at least one special character.";
+    return null;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
+    const pwError = validatePassword(password);
+    if (pwError) { setError(pwError); return; }
     if (password !== confirm) {
       setError("Passwords do not match.");
       return;
@@ -71,7 +78,7 @@ export default function ResetPassword() {
                 onChange={e => setPassword(e.target.value)}
                 required
                 autoFocus
-                placeholder="Min. 6 characters"
+                placeholder="Min. 8 chars, upper, lower, number, symbol"
                 className="w-full bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white transition-all"
               />
             </div>
