@@ -33,9 +33,9 @@ class RoleUpdate(BaseModel):
     role: Literal["admin", "maintainer", "user"]
 
 class UserUpdate(BaseModel):
-    role: Optional[Literal["admin", "maintainer", "user"]]
-    email: Optional[str]
-    password: Optional[str]
+    role: Optional[Literal["admin", "maintainer", "user"]] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
 
 class TempAccessRequest(BaseModel):
     reason: str
@@ -202,12 +202,11 @@ def update_user(
         details.append("Password updated")
 
     if not details:
-        return target
+        return {"id": target.id, "username": target.username, "email": target.email, "role": target.role}
 
     db.commit()
     db.refresh(target)
 
-    # Use a generic action for non-admin self-updates
     action = "auth.user_updated" if is_admin else "auth.self_update"
     db.add(AuditLog(
         user_id=current_user.id,
@@ -217,9 +216,7 @@ def update_user(
         timestamp=datetime.utcnow(),
     ))
     db.commit()
-    return target
-
-    return target
+    return {"id": target.id, "username": target.username, "email": target.email, "role": target.role}
 
 # ---------------------------------------------------------------------------
 # Temp admin access
