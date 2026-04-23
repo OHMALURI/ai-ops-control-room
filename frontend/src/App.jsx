@@ -9,6 +9,7 @@ import AuditLog from './pages/AuditLog';
 import DataPolicy from './pages/DataPolicy';
 import UserManager from './pages/UserManager';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import PerformanceLogs from './pages/PerformanceLogs';
 
 function ProtectedLayout() {
@@ -46,6 +47,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Dashboard />} />

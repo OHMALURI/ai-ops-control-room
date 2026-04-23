@@ -47,7 +47,11 @@ export default function Login() {
       localStorage.setItem("effectiveRole",effectiveRole);
       localStorage.setItem("isTempAdmin",  isTempAdmin ? "true" : "false");
       localStorage.setItem("username",     data.username);
-      navigate("/dashboard");
+      if (data.force_password_reset) {
+        navigate("/reset-password");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Login failed");
     } finally {

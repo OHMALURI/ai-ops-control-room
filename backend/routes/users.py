@@ -106,6 +106,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         "role": user.role,
         "effective_role": effective,
         "username": user.username,
+        "force_password_reset": user.force_password_reset,
     }
 
 
@@ -199,7 +200,12 @@ def update_user(
     # 3. Update Password (Admin or Self)
     if payload.password is not None and payload.password.strip():
         target.password_hash = hash_password(payload.password)
-        details.append("Password updated")
+        if is_admin and not is_self:
+            target.force_password_reset = True
+            details.append("Password updated (temp — reset required on next login)")
+        else:
+            target.force_password_reset = False
+            details.append("Password updated")
 
     if not details:
         return {"id": target.id, "username": target.username, "email": target.email, "role": target.role}

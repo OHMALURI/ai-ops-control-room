@@ -36,7 +36,7 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
   const currentUsername = localStorage.getItem("username") || "";
   const isSelf = user?.username === currentUsername;
 
-  const [role, setRole] = useState(user?.role || "user");
+  const [role, setRole] = useState(ROLES.includes(user?.role) ? user.role : "user");
   const [email, setEmail] = useState(user?.email || "");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
@@ -50,8 +50,8 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
     setSaving(true); setSaved(false); setError("");
     try {
       const payload = { email };
-      // Only include role if NOT self (backend blocks self-role update anyway)
-      if (!isSelf) payload.role = role;
+      // Only send role if it actually changed (avoids Pydantic error on legacy roles)
+      if (!isSelf && role !== user.role) payload.role = role;
       if (password.trim()) payload.password = password;
 
       const { data } = await api.put(`/auth/users/${user.username}/update`, payload);
