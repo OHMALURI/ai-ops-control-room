@@ -5,8 +5,9 @@ from routes.evaluations import router as evaluations_router
 from routes.services import router as services_router
 
 from database import Base, engine, SessionLocal
-from models import Service
+from models import Service, AuditLog
 from services.evaluator import run_evaluation
+from datetime import datetime as _dt
 from apscheduler.schedulers.background import BackgroundScheduler
 import sqlite3, os
 
@@ -30,11 +31,34 @@ app.add_middleware(
 
 
 def run_all_evaluations():
+    import sys
+    if sys.is_finalizing():
+        return
     db = SessionLocal()
     try:
         services = db.query(Service).filter(Service.auto_eval_enabled == True).all()
+        if not services:
+            return
+        db.add(AuditLog(
+            user_id=None,
+            action="evaluation.auto_run_started",
+            resource="scheduler",
+            details=f"Auto eval triggered by scheduler | Services: {', '.join(s.name for s in services)}",
+            timestamp=_dt.utcnow(),
+        ))
+        db.commit()
         for service in services:
-            run_evaluation(service.id, db)
+            try:
+                run_evaluation(service.id, db)
+            except Exception as e:
+                db.add(AuditLog(
+                    user_id=None,
+                    action="evaluation.auto_run_error",
+                    resource=f"services/{service.id}",
+                    details=f"Auto eval failed | Service: {service.name} | Error: {str(e)[:300]}",
+                    timestamp=_dt.utcnow(),
+                ))
+                db.commit()
     finally:
         db.close()
 

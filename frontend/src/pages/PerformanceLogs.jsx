@@ -265,26 +265,38 @@ export default function PerformanceLogs() {
                                     <div className="flex items-center justify-between flex-wrap gap-3 border-b pb-3">
                                       <h4 className="font-bold text-sm text-gray-700">Sample Evaluation Details</h4>
                                       <div className="flex gap-1.5 flex-wrap">
-                                        {['all', 'math', 'reasoning', 'knowledge', 'security'].map(cat => {
-                                          const active = sampleFilter === cat;
-                                          const colors = {
-                                            all:       active ? 'bg-slate-800 text-white border-slate-800'       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400',
-                                            math:      active ? 'bg-indigo-600 text-white border-indigo-600'     : 'bg-white text-indigo-500 border-indigo-200 hover:border-indigo-400',
-                                            reasoning: active ? 'bg-cyan-600 text-white border-cyan-600'         : 'bg-white text-cyan-600 border-cyan-200 hover:border-cyan-400',
-                                            knowledge: active ? 'bg-green-600 text-white border-green-600'       : 'bg-white text-green-600 border-green-200 hover:border-green-400',
-                                            security:  active ? 'bg-amber-500 text-white border-amber-500'       : 'bg-white text-amber-600 border-amber-200 hover:border-amber-400',
+                                        {(() => {
+                                          const catAvg = (cat) => {
+                                            const s = samples.filter(x => x.category === cat);
+                                            if (!s.length) return null;
+                                            const avg = s.reduce((sum, x) => sum + (x.score_pct ?? (x.si != null ? x.si * 100 : 0)), 0) / s.length;
+                                            return avg;
                                           };
-                                          const count = cat === 'all' ? samples.length : samples.filter(s => s.category === cat).length;
-                                          return (
-                                            <button
-                                              key={cat}
-                                              onClick={() => setSampleFilter(cat)}
-                                              className={`px-3 py-1 rounded-full text-[11px] font-bold border capitalize transition-all ${colors[cat]}`}
-                                            >
-                                              {cat} ({count})
-                                            </button>
-                                          );
-                                        })}
+                                          const allAvg = samples.length
+                                            ? samples.reduce((sum, x) => sum + (x.score_pct ?? (x.si != null ? x.si * 100 : 0)), 0) / samples.length
+                                            : null;
+                                          return ['all', 'math', 'reasoning', 'knowledge', 'security'].map(cat => {
+                                            const active = sampleFilter === cat;
+                                            const colors = {
+                                              all:       active ? 'bg-slate-800 text-white border-slate-800'       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400',
+                                              math:      active ? 'bg-indigo-600 text-white border-indigo-600'     : 'bg-white text-indigo-500 border-indigo-200 hover:border-indigo-400',
+                                              reasoning: active ? 'bg-cyan-600 text-white border-cyan-600'         : 'bg-white text-cyan-600 border-cyan-200 hover:border-cyan-400',
+                                              knowledge: active ? 'bg-green-600 text-white border-green-600'       : 'bg-white text-green-600 border-green-200 hover:border-green-400',
+                                              security:  active ? 'bg-amber-500 text-white border-amber-500'       : 'bg-white text-amber-600 border-amber-200 hover:border-amber-400',
+                                            };
+                                            const count = cat === 'all' ? samples.length : samples.filter(s => s.category === cat).length;
+                                            const avg   = cat === 'all' ? allAvg : catAvg(cat);
+                                            return (
+                                              <button
+                                                key={cat}
+                                                onClick={() => setSampleFilter(cat)}
+                                                className={`px-3 py-1 rounded-full text-[11px] font-bold border capitalize transition-all ${colors[cat]}`}
+                                              >
+                                                {cat} ({count}){avg != null ? ` · ${avg.toFixed(0)}%` : ''}
+                                              </button>
+                                            );
+                                          });
+                                        })()}
                                       </div>
                                     </div>
                                     {samples.length === 0 ? (

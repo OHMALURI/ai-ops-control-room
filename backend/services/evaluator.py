@@ -471,12 +471,18 @@ _METRIC_TIMEOUT = 120
 
 
 def _run_with_timeout(fn, *args, timeout=_METRIC_TIMEOUT):
-    with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(fn, *args)
-        try:
-            return fut.result(timeout=timeout)
-        except _cf.TimeoutError:
-            raise TimeoutError(f"{fn.__name__} timed out after {timeout}s")
+    try:
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(fn, *args)
+            try:
+                return fut.result(timeout=timeout)
+            except _cf.TimeoutError:
+                raise TimeoutError(f"{fn.__name__} timed out after {timeout}s")
+    except RuntimeError as e:
+        if "cannot schedule new futures" in str(e):
+            # Fallback: called from APScheduler's thread pool — run directly without timeout wrapper
+            return fn(*args)
+        raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────

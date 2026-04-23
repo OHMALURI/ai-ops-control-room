@@ -354,7 +354,7 @@ export default function ServiceRegistry() {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-100 text-gray-500 uppercase text-xs tracking-wide">
               <tr>
-                {['Name', 'Owner', 'Env', 'Provider', 'Model', 'Sensitivity', 'Auto Eval', 'Actions'].map(h => (
+                {['Name', 'Owner', 'Env', 'Provider', 'Model', 'Sensitivity', ...(canConfigure ? ['Auto Eval'] : []), 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold">{h}</th>
                 ))}
               </tr>
@@ -409,7 +409,7 @@ export default function ServiceRegistry() {
                             <option value="confidential">confidential</option>
                           </select>
                         </td>
-                        <td className="px-4 py-2" />
+                        {canConfigure && <td className="px-4 py-2" />}
                         <td className="px-4 py-2 flex gap-2">
                           <button onClick={() => handleSave(service.id)}
                             className={btn('bg-green-600 hover:bg-green-700 text-white')}>Save</button>
@@ -442,19 +442,21 @@ export default function ServiceRegistry() {
                                 : 'bg-green-100 text-green-700'
                             }`}>{service.data_sensitivity}</span>
                         </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => toggleAutoEval(service.id)}
-                            title={service.auto_eval_enabled ? 'Disable hourly auto-evaluation' : 'Enable hourly auto-evaluation'}
-                            className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 focus:outline-none ${
-                              service.auto_eval_enabled ? 'bg-indigo-600' : 'bg-gray-300'
-                            }`}
-                          >
-                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform duration-200 ${
-                              service.auto_eval_enabled ? 'translate-x-[13px]' : 'translate-x-[2px]'
-                            }`} />
-                          </button>
-                        </td>
+                        {canConfigure && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => toggleAutoEval(service.id)}
+                              title={service.auto_eval_enabled ? 'Disable hourly auto-evaluation' : 'Enable hourly auto-evaluation'}
+                              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 focus:outline-none ${
+                                service.auto_eval_enabled ? 'bg-indigo-600' : 'bg-gray-300'
+                              }`}
+                            >
+                              <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform duration-200 ${
+                                service.auto_eval_enabled ? 'translate-x-[13px]' : 'translate-x-[2px]'
+                              }`} />
+                            </button>
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             {canConfigure && (

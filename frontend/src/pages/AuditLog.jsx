@@ -3,14 +3,14 @@ import api from "../api.js";
 
 /* ── action category → colour tokens ─────────────────────────────────── */
 const CAT = {
-  auth:        { pill: "bg-blue-500/20 text-blue-200 border-blue-400/70",     dot: "bg-blue-400"    },
-  service:     { pill: "bg-emerald-500/20 text-emerald-200 border-emerald-400/70", dot: "bg-emerald-400" },
-  incident:    { pill: "bg-amber-500/20 text-amber-200 border-amber-400/70",  dot: "bg-amber-400"   },
-  maintenance: { pill: "bg-purple-500/20 text-purple-200 border-purple-400/70", dot: "bg-purple-400" },
-  governance:  { pill: "bg-cyan-500/20 text-cyan-200 border-cyan-400/70",     dot: "bg-cyan-400"    },
-  evaluation:  { pill: "bg-violet-500/20 text-violet-200 border-violet-400/70", dot: "bg-violet-400" },
+  auth:        { pill: "bg-blue-500/20 text-blue-400 border-blue-500",       active: "bg-blue-500 text-white border-blue-400",       dot: "bg-blue-400"    },
+  service:     { pill: "bg-emerald-500/20 text-emerald-400 border-emerald-500", active: "bg-emerald-500 text-white border-emerald-400", dot: "bg-emerald-400" },
+  incident:    { pill: "bg-amber-500/20 text-amber-400 border-amber-500",     active: "bg-amber-500 text-white border-amber-400",     dot: "bg-amber-400"   },
+  maintenance: { pill: "bg-purple-500/20 text-purple-400 border-purple-500",  active: "bg-purple-500 text-white border-purple-400",   dot: "bg-purple-400"  },
+  governance:  { pill: "bg-cyan-500/20 text-cyan-400 border-cyan-500",        active: "bg-cyan-500 text-white border-cyan-400",       dot: "bg-cyan-400"    },
+  evaluation:  { pill: "bg-violet-500/20 text-violet-400 border-violet-500",  active: "bg-violet-500 text-white border-violet-400",   dot: "bg-violet-400"  },
 };
-const DEFAULT_CAT = { pill: "bg-gray-700/60 text-gray-200 border-gray-500", dot: "bg-gray-400" };
+const DEFAULT_CAT = { pill: "bg-gray-700/40 text-gray-300 border-gray-500", active: "bg-gray-500 text-white border-gray-400", dot: "bg-gray-400" };
 
 function catOf(action = "") { return CAT[action.split(".")[0]] ?? DEFAULT_CAT; }
 
@@ -312,9 +312,7 @@ export default function AuditLog() {
               key={k}
               onClick={() => setFCategory(active ? "" : k)}
               className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
-                active
-                  ? v.pill + " ring-2 ring-offset-1 ring-offset-gray-950 ring-current opacity-100"
-                  : v.pill + " opacity-50 hover:opacity-90"
+                active ? v.active + " ring-2 ring-offset-1 ring-offset-gray-950 ring-current" : v.pill + " hover:brightness-125"
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${v.dot}`} />
