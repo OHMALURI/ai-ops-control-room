@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api.js";
+import useCountUp from "../hooks/useCountUp";
+
+function AnimatedStat({ n, loading, color }) {
+  const count = useCountUp(loading ? 0 : (n ?? 0));
+  if (loading) return <span className="inline-block w-12 h-10 bg-slate-100 rounded-lg animate-pulse" />;
+  return <span className={`text-5xl font-black tabular-nums ${color} leading-none`}>{count}</span>;
+}
 
 function timeAgo(d) {
   if (!d) return "—";
@@ -143,9 +150,7 @@ export default function Dashboard() {
               <button key={label} onClick={() => navigate(to)}
                 className="group py-8 px-8 text-left hover:bg-slate-50 transition-colors">
                 <div className="flex items-start gap-2">
-                  <span className={`text-5xl font-black tabular-nums ${color} leading-none`}>
-                    {loading ? <span className="inline-block w-12 h-10 bg-slate-100 rounded-lg animate-pulse" /> : n}
-                  </span>
+                  <AnimatedStat n={n} loading={loading} color={color} />
                   {alert && !loading && (
                     <span className="mt-1 w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
                   )}

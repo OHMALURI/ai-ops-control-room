@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useTheme } from "../contexts/ThemeContext";
 
 const BASE_LINKS = [
   {
@@ -59,6 +60,7 @@ function Initials({ name }) {
 export default function NavBar() {
   const navigate = useNavigate();
   const [showInfo, setShowInfo] = useState(false);
+  const { dark, toggle } = useTheme();
   const username      = localStorage.getItem("username")      || "—";
   const email         = localStorage.getItem("email")         || "";
   const role          = localStorage.getItem("role")          || "user";
@@ -133,8 +135,28 @@ export default function NavBar() {
           ))}
         </div>
 
+        {/* ── Theme toggle ── */}
+        <button
+          onClick={toggle}
+          title={dark ? "Switch to light mode" : "Switch to dark mode"}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-yellow-400 hover:bg-gray-800/60 border border-transparent hover:border-gray-700/50 transition-all shrink-0"
+        >
+          {dark ? (
+            /* Sun icon */
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="5" />
+              <path strokeLinecap="round" d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          ) : (
+            /* Moon icon */
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+            </svg>
+          )}
+        </button>
+
         {/* ── User section ── */}
-        <div className="relative flex items-center gap-2.5 shrink-0 ml-auto pl-2 border-l border-gray-800">
+        <div className="relative flex items-center gap-2.5 shrink-0 pl-2 border-l border-gray-800">
           <button
             onClick={() => setShowInfo(v => !v)}
             className="flex items-center gap-2.5 focus:outline-none"

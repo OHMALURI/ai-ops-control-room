@@ -1,271 +1,608 @@
-const COMPLIANCE_BADGES = [
-  { label: "No PII Stored",          color: "green"  },
-  { label: "Audit Logged",           color: "indigo" },
-  { label: "Local-First",            color: "indigo" },
-  { label: "Zero Prompt Retention",  color: "green"  },
-];
+import { useState, useEffect, useRef } from "react";
+import api from "../api.js";
+import { useTheme } from "../contexts/ThemeContext";
+
+/* Pre-compute dot grid positions (outside component — computed once) */
+const DOT_GAP = 24;
+const DOTS = [];
+for (let row = 0; row * DOT_GAP < 330; row++) {
+  for (let col = 0; col * DOT_GAP < 920; col++) {
+    DOTS.push({ cx: col * DOT_GAP + 1.2, cy: row * DOT_GAP + 1.2 });
+  }
+}
+
+/* ── Helpers ─────────────────────────────────────────────────── */
+
+function actionColor(action) {
+  const cat = (action || "").split(".")[0];
+  return { auth:"#60a5fa", evaluation:"#a78bfa", incident:"#fbbf24",
+           service:"#34d399", maintenance:"#c084fc", governance:"#22d3ee" }[cat] ?? "#64748b";
+}
+
+function relTime(ts) {
+  if (!ts) return "";
+  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+/* ── Data ────────────────────────────────────────────────────── */
 
 const DATA_CLASSES = [
-  { type: "Service Config",    fields: "Name, owner, env, model, API key ref",         sensitivity: "Internal",     color: "indigo" },
-  { type: "Evaluation Results",fields: "Scores, timestamps, dataset type",             sensitivity: "Internal",     color: "indigo" },
-  { type: "Incidents",         fields: "Symptoms, timeline, AI summaries",             sensitivity: "Confidential", color: "amber"  },
-  { type: "Maintenance Plans", fields: "Risk level, rollback plan, approval",          sensitivity: "Confidential", color: "amber"  },
-  { type: "Audit Logs",        fields: "Action, resource, user, timestamp",            sensitivity: "Restricted",   color: "red"    },
-  { type: "User Accounts",     fields: "Username, email, role (no plain passwords)",   sensitivity: "Restricted",   color: "red"    },
+  { type: "Service Config",     fields: "Name, owner, env, model, API key ref",       sc: "indigo", sensitivity: "Internal"     },
+  { type: "Evaluation Results", fields: "Scores, timestamps, dataset type",           sc: "indigo", sensitivity: "Internal"     },
+  { type: "Incidents",          fields: "Symptoms, timeline, AI summaries",           sc: "amber",  sensitivity: "Confidential" },
+  { type: "Maintenance Plans",  fields: "Risk level, rollback plan, approval",        sc: "amber",  sensitivity: "Confidential" },
+  { type: "Audit Logs",         fields: "Action, resource, user, timestamp",          sc: "red",    sensitivity: "Restricted"   },
+  { type: "User Accounts",      fields: "Username, email, role (no plain passwords)", sc: "red",    sensitivity: "Restricted"   },
 ];
 
-const SECTIONS = [
+const COMPLIANCE = [
+  "No PII Stored", "Audit Logged", "Local-First", "Zero Prompt Retention",
+];
+
+const POLICY_CARDS = [
   {
-    id: "retention", label: "01", title: "Data Retention",
+    id: "retention", title: "Data Retention",
     rules: [
-      "Evaluation results are stored indefinitely — only scores and metadata, never prompt text.",
-      "Incident summaries are generated once and stored; the originating prompt is not retained after the API call completes.",
+      "Evaluation results stored indefinitely — scores and metadata only, never prompt text.",
+      "Incident summaries generated once and stored; originating prompts are not retained.",
       "Audit log entries are immutable and permanently retained for compliance.",
-      "Drift judge results store model responses in full — treat this as internal data only.",
+      "Drift judge results store full model responses — treat as internal data only.",
     ],
   },
   {
-    id: "prompt", label: "02", title: "Prompt Logging Policy",
+    id: "prompts", title: "Prompt Logging",
     rules: [
-      "Test prompts sent to models during evaluation runs are not persisted to the database.",
-      "Only the evaluation output (score, pass/fail, metrics) is written to storage.",
-      "Incident text submitted to the LLM for post-mortem generation is not stored after the response is received.",
-      "Drift judge tool calls and raw LLM JSON are stored in drift_judge_results — do not include PII in sample sets.",
+      "Test prompts sent during evaluation runs are never persisted to the database.",
+      "Only evaluation output (score, pass/fail, metrics) is written to storage.",
+      "Incident text submitted for post-mortem generation is discarded after response.",
+      "Drift judge raw LLM JSON is stored — do not include PII in sample sets.",
     ],
   },
   {
-    id: "routing", label: "03", title: "Network & Data Routing",
+    id: "network", title: "Network & Routing",
     rules: [
-      "The React frontend and FastAPI backend both run entirely on your local machine.",
-      "Cloud LLM APIs (OpenAI, Anthropic, etc.) are called by the backend only — the browser never contacts them directly.",
-      "API keys are referenced by name in the database, not stored in plaintext.",
-      "No telemetry, analytics, or usage data is transmitted to any third-party service outside the configured LLM providers.",
+      "Frontend and backend run entirely on your local machine — no cloud hosting.",
+      "Cloud LLM APIs are called by the backend only; browser never contacts them.",
+      "API keys referenced by name in the database, never stored in plaintext.",
+      "No telemetry or usage data transmitted outside configured LLM providers.",
     ],
   },
   {
-    id: "access", label: "04", title: "Role-Based Data Access",
+    id: "access", title: "Role-Based Access",
     rules: [
-      "Viewers can read services, evaluations, and incidents — no write access.",
-      "Maintainers can create and manage services, incidents, and maintenance plans.",
-      "Admins have full access including user management, audit logs, and governance controls.",
-      "Temporary admin elevation is time-bounded, audited, and cannot be self-approved.",
+      "Viewers: read services, evaluations, and incidents — no write access.",
+      "Maintainers: create and manage services, incidents, and maintenance plans.",
+      "Admins: full access — user management, audit logs, and governance controls.",
+      "Temp admin elevation is time-bounded, audited, and cannot be self-approved.",
     ],
   },
 ];
 
-const sensitivityStyle = (color) => {
-  if (color === "green")  return { pill: "bg-green-100 text-green-700 border-green-200",  dot: "bg-green-500"  };
-  if (color === "amber")  return { pill: "bg-amber-100 text-amber-700 border-amber-200",  dot: "bg-amber-500"  };
-  if (color === "red")    return { pill: "bg-red-100 text-red-700 border-red-200",         dot: "bg-red-500"    };
-  return                         { pill: "bg-indigo-100 text-indigo-700 border-indigo-200",dot: "bg-indigo-500" };
+/* ── Mind map topology ───────────────────────────────────────── */
+
+const HUB = { x: 450, y: 82 };
+
+const NODES = [
+  { id: "classification", label: ["Data",    "Types"],      color: "#818cf8", x:  82, y: 236, delay: "0s",     count: "6 types"  },
+  { id: "retention",      label: ["Data",    "Retention"],  color: "#38bdf8", x: 216, y: 263, delay: "0.12s",  count: "4 rules"  },
+  { id: "prompts",        label: ["Prompt",  "Logging"],    color: "#34d399", x: 350, y: 273, delay: "0.24s",  count: "4 rules"  },
+  { id: "network",        label: ["Network", "& Routing"],  color: "#fbbf24", x: 550, y: 273, delay: "0.36s",  count: "4 rules"  },
+  { id: "access",         label: ["Role",    "Access"],     color: "#fb923c", x: 684, y: 263, delay: "0.48s",  count: "4 rules"  },
+  { id: "compliance",     label: ["Safety",  "& Policy"],   color: "#4ade80", x: 818, y: 236, delay: "0.6s",   count: "4 checks" },
+];
+
+const CARD_ORDER = ["classification", "retention", "prompts", "network", "access", "compliance"];
+
+function branch(n) {
+  return `M ${HUB.x} ${HUB.y} C ${HUB.x} ${HUB.y + 100} ${n.x} ${n.y - 62} ${n.x} ${n.y}`;
+}
+
+/* ── Sensitivity palette ─────────────────────────────────────── */
+const SENS = {
+  indigo: { bg: "rgba(99,102,241,0.14)",  border: "#4338ca60", text: "#a5b4fc" },
+  amber:  { bg: "rgba(245,158,11,0.14)",  border: "#b4530060", text: "#fcd34d" },
+  red:    { bg: "rgba(239,68,68,0.14)",   border: "#dc262660", text: "#fca5a5" },
 };
 
-const badgeStyle = (color) => {
-  if (color === "green") return "bg-green-50 text-green-700 border-green-200";
-  return "bg-indigo-50 text-indigo-700 border-indigo-200";
+const SENS_LIGHT = {
+  indigo: { bg: "rgba(99,102,241,0.10)",  border: "#6366f140", text: "#4f46e5" },
+  amber:  { bg: "rgba(245,158,11,0.10)",  border: "#d9770640", text: "#b45309" },
+  red:    { bg: "rgba(239,68,68,0.10)",   border: "#dc262640", text: "#dc2626" },
 };
+
+/* ── Component ───────────────────────────────────────────────── */
 
 export default function DataPolicy() {
-  return (
-    <div className="min-h-screen bg-slate-50">
+  const { dark } = useTheme();
+  const isAdmin = localStorage.getItem("effectiveRole") === "admin";
+  const [auditFeed,    setAuditFeed]    = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
-      {/* ── Hero ── */}
-      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-800/30 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
-        <div className="relative max-w-5xl mx-auto px-10 pt-14 pb-16">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
-              <svg className="w-5 h-5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
-            <span className="text-indigo-400 text-xs font-bold uppercase tracking-[0.2em]">Governance Document</span>
-          </div>
-          <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-3">Data Handling Policy</h1>
-          <p className="text-slate-400 text-base max-w-xl leading-relaxed mb-8">
-            Defines how data is classified, stored, transmitted, and protected across the AI Pulse platform.
-          </p>
-          {/* Compliance badges */}
-          <div className="flex flex-wrap gap-2">
-            {COMPLIANCE_BADGES.map(b => (
-              <span key={b.label} className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold ${badgeStyle(b.color)}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${b.color === "green" ? "bg-green-500" : "bg-indigo-500"}`} />
-                {b.label}
-              </span>
-            ))}
-          </div>
-          <p className="text-slate-600 text-xs mt-6">v1.2 · April 2026 · Internal Use Only</p>
-        </div>
+  /* ── Theme colour palette ── */
+  const C = {
+    pageBg:        dark ? "#08090f"  : "#f4f6fb",
+    pageText:      dark ? "#e2e8f0"  : "#1e293b",
+    svgTopGrad:    dark ? "rgba(99,102,241,0.11)" : "rgba(99,102,241,0.07)",
+    dotDefault:    dark ? "#181e2d"  : "#c8d0df",
+    hubGradId:     dark ? "url(#hub-grad)" : "url(#hub-grad-light)",
+    hubText:       dark ? "#ffffff"  : "#1e293b",
+    hubSub:        dark ? "#475569"  : "#475569",
+    hubVer:        dark ? "#1e2d3d"  : "#94a3b8",
+    nodeBody:      dark ? "#0a0c18"  : "#ffffff",
+    nodeCount:     dark ? "#2d3b50"  : "#94a3b8",
+    branchOpacity: dark ? "0.5"      : "0.55",
+    divGrad:       dark ? "#1e2a3a"  : "#cbd5e1",
+    divText:       dark ? "#263040"  : "#94a3b8",
+    cardBg:        dark ? "#0b0d18"  : "#ffffff",
+    cardBorder:    dark ? "#161d2c"  : "#e2e8f0",
+    cardHdrBorder: dark ? "#101520"  : "#f1f5f9",
+    cardSub:       dark ? "#243040"  : "#94a3b8",
+    classTitle:    dark ? "#cbd5e1"  : "#334155",
+    classField:    dark ? "#2d3b50"  : "#64748b",
+    ruleText:      dark ? "#6b7280"  : "#475569",
+    compBadgeText: dark ? "#86efac"  : "#15803d",
+    flowBg:        dark ? "#070910"  : "#f8fafc",
+    flowBorder:    dark ? "#131b28"  : "#e2e8f0",
+    flowLabel:     dark ? "#1e2d3d"  : "#94a3b8",
+    flowNodeBg:    dark ? "#0c0f1a"  : "#f1f5f9",
+    flowNodeBorder:dark ? "#1e2535"  : "#e2e8f0",
+    flowNodeText:  dark ? "#64748b"  : "#64748b",
+    flowNodeSub:   dark ? "#1e2d3d"  : "#94a3b8",
+    arrowCloud:    dark ? "#fbbf24"  : "#f59e0b",
+    arrowNorm:     dark ? "#1e2d3d"  : "#cbd5e1",
+    auditBg:       dark ? "#070910"  : "#f8fafc",
+    auditBorder:   dark ? "#131b28"  : "#e2e8f0",
+    auditHdrBorder:dark ? "#0e1420"  : "#f1f5f9",
+    auditHdrText:  dark ? "#1e2d3d"  : "#94a3b8",
+    auditRowBorder:dark ? "#0c1018"  : "#f1f5f9",
+    auditActRest:  dark ? "#374151"  : "#64748b",
+    auditUser:     dark ? "#263040"  : "#94a3b8",
+    auditTime:     dark ? "#1a2535"  : "#cbd5e1",
+    skelDot:       dark ? "#1a2535"  : "#e2e8f0",
+    skelBar:       dark ? "#111827"  : "#f1f5f9",
+    noEntries:     dark ? "#1e2d3d"  : "#94a3b8",
+    warningText:   dark ? "#f87171"  : "#dc2626",
+    warningBody:   dark ? "#374151"  : "#64748b",
+    footerBorder:  dark ? "#10161f"  : "#e2e8f0",
+    footerText:    dark ? "#1a2535"  : "#94a3b8",
+  };
+
+  const SENS_PAL = dark ? SENS : SENS_LIGHT;
+
+  /* ── Dot interactivity ── */
+  const svgRef    = useRef(null);
+  const mouseRef  = useRef({ x: -9999, y: -9999 });
+  const rafRef    = useRef(null);
+  const themeRef  = useRef(dark);
+
+  useEffect(() => { themeRef.current = dark; }, [dark]);
+
+  /* Reset dot fills when theme changes */
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const fill = dark ? "#181e2d" : "#c8d0df";
+    svgRef.current.querySelectorAll(".bg-dot").forEach(dot => {
+      dot.setAttribute("r",            "0.7");
+      dot.setAttribute("fill",         fill);
+      dot.setAttribute("fill-opacity", "1");
+    });
+  }, [dark]);
+
+  function applyDotEffect(mx, my) {
+    if (!svgRef.current) return;
+    const RADIUS   = 72;
+    const resetFill = themeRef.current ? "#181e2d" : "#c8d0df";
+    svgRef.current.querySelectorAll(".bg-dot").forEach(dot => {
+      const cx   = +dot.getAttribute("data-cx");
+      const cy   = +dot.getAttribute("data-cy");
+      const dist = Math.sqrt((cx - mx) ** 2 + (cy - my) ** 2);
+      if (dist < RADIUS) {
+        const t    = 1 - dist / RADIUS;
+        const ease = t * t * (3 - 2 * t);
+        dot.setAttribute("r",            (0.7 + ease * 1.5).toFixed(2));
+        dot.setAttribute("fill",         `rgb(${Math.round(99+ease*30)},${Math.round(102+ease*20)},241)`);
+        dot.setAttribute("fill-opacity", (themeRef.current ? 0.12 : 0.18 + ease * 0.82).toFixed(2));
+      } else {
+        dot.setAttribute("r",            "0.7");
+        dot.setAttribute("fill",         resetFill);
+        dot.setAttribute("fill-opacity", "1");
+      }
+    });
+  }
+
+  function handleDotMouseMove(e) {
+    if (!svgRef.current) return;
+    const rect   = svgRef.current.getBoundingClientRect();
+    const scaleX = 900 / rect.width;
+    const scaleY = 315 / rect.height;
+    mouseRef.current = {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top)  * scaleY,
+    };
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        applyDotEffect(mouseRef.current.x, mouseRef.current.y);
+      });
+    }
+  }
+
+  function handleDotMouseLeave() {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    const resetFill = themeRef.current ? "#181e2d" : "#c8d0df";
+    svgRef.current?.querySelectorAll(".bg-dot").forEach(dot => {
+      dot.setAttribute("r",            "0.7");
+      dot.setAttribute("fill",         resetFill);
+      dot.setAttribute("fill-opacity", "1");
+    });
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAuditLoading(true);
+    api.get("/governance/audit-log")
+      .then(({ data }) => setAuditFeed(data.slice(0, 7)))
+      .catch(() => {})
+      .finally(() => setAuditLoading(false));
+  }, [isAdmin]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.pageBg, color: C.pageText }}>
+      <style>{`
+        @keyframes mm-draw  { to   { stroke-dashoffset: 0; }                         }
+        @keyframes mm-node  { from { opacity:0; transform:translateY(10px); }
+                              to   { opacity:1; transform:translateY(0); }           }
+        @keyframes hub-pulse{ 0%,100%{opacity:.14;} 50%{opacity:.38;}               }
+        @keyframes card-in  { from { opacity:0; transform:translateY(16px); }
+                              to   { opacity:1; transform:translateY(0); }           }
+        .mm-card { animation: card-in .45s ease both; }
+      `}</style>
+
+      {/* ══ Mind Map SVG ══ */}
+      <div style={{ background: `radial-gradient(ellipse 80% 55% at 50% -5%, ${C.svgTopGrad} 0%, transparent 68%)` }}>
+        <svg
+          ref={svgRef}
+          viewBox="0 0 900 315"
+          width="100%"
+          style={{ display: "block", cursor: "crosshair" }}
+          onMouseMove={handleDotMouseMove}
+          onMouseLeave={handleDotMouseLeave}
+        >
+          <defs>
+            <filter id="fg-md" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="4" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <filter id="fg-sm" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <radialGradient id="hub-grad" cx="40%" cy="35%">
+              <stop offset="0%"   stopColor="#1e1b4b"/>
+              <stop offset="100%" stopColor="#08090f"/>
+            </radialGradient>
+            <radialGradient id="hub-grad-light" cx="40%" cy="35%">
+              <stop offset="0%"   stopColor="#eef2ff"/>
+              <stop offset="100%" stopColor="#f4f6fb"/>
+            </radialGradient>
+          </defs>
+
+          {/* Interactive dot grid */}
+          {DOTS.map(({ cx, cy }, i) => (
+            <circle
+              key={i}
+              className="bg-dot"
+              data-cx={cx}
+              data-cy={cy}
+              cx={cx} cy={cy}
+              r="0.7"
+              fill={C.dotDefault}
+              fillOpacity="1"
+            />
+          ))}
+
+          {/* Branch bezier lines */}
+          {NODES.map(n => (
+            <path
+              key={n.id}
+              d={branch(n)}
+              stroke={n.color}
+              strokeWidth="1.4"
+              fill="none"
+              strokeOpacity={C.branchOpacity}
+              pathLength={1}
+              style={{
+                strokeDasharray: 1,
+                strokeDashoffset: 1,
+                animation: `mm-draw .8s ${n.delay} cubic-bezier(.4,0,.2,1) forwards`,
+              }}
+            />
+          ))}
+
+          {/* Hub outer breathing ring */}
+          <circle cx={HUB.x} cy={HUB.y} r="62" fill="none" stroke="#6366f1" strokeWidth="0.7"
+            style={{ animation: "hub-pulse 2.8s ease-in-out infinite" }} />
+
+          {/* Hub dashed inner ring */}
+          <circle cx={HUB.x} cy={HUB.y} r="52" fill="none" stroke="#6366f1"
+            strokeWidth="0.5" strokeOpacity="0.25" strokeDasharray="2.5 7" />
+
+          {/* Hub glow */}
+          <circle cx={HUB.x} cy={HUB.y} r="48" fill="#6366f1" fillOpacity="0.07" filter="url(#fg-md)" />
+
+          {/* Hub body */}
+          <circle cx={HUB.x} cy={HUB.y} r="42" fill={C.hubGradId} stroke="#6366f1"
+            strokeWidth="1.6" filter="url(#fg-sm)" />
+
+          {/* Hub — checkmark shield icon */}
+          <g transform={`translate(${HUB.x}, ${HUB.y - 16})`}>
+            <path d="M0-9 L-6.5-6.5 V-1 C-6.5 3 -2.5 6.5 0 8 C2.5 6.5 6.5 3 6.5-1 V-6.5 Z"
+              fill="#6366f1" fillOpacity="0.22" stroke="#818cf8" strokeWidth="1" strokeLinejoin="round" />
+            <path d="M-3 -1 L-0.5 2 L4 -3.5"
+              fill="none" stroke="#a5b4fc" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          </g>
+
+          {/* Hub labels */}
+          <text x={HUB.x} y={HUB.y + 10} textAnchor="middle" fontSize="8.2" fontWeight="800"
+            fill={C.hubText} fontFamily="system-ui,sans-serif" letterSpacing="0.6">AI PULSE</text>
+          <text x={HUB.x} y={HUB.y + 22} textAnchor="middle" fontSize="5" fontWeight="600"
+            fill={C.hubSub} fontFamily="system-ui,sans-serif" letterSpacing="1.8">DATA POLICY</text>
+          <text x={HUB.x} y={HUB.y + 33} textAnchor="middle" fontSize="3.8"
+            fill={C.hubVer} fontFamily="system-ui,sans-serif">v1.2 · April 2026</text>
+
+          {/* Topic nodes */}
+          {NODES.map(n => (
+            <g key={n.id} style={{
+              opacity: 0,
+              animation: `mm-node .55s ${parseFloat(n.delay) + .55}s cubic-bezier(.34,1.56,.64,1) forwards`,
+            }}>
+              {/* Halo */}
+              <circle cx={n.x} cy={n.y} r="33" fill={n.color} fillOpacity="0.07" />
+              {/* Body */}
+              <circle cx={n.x} cy={n.y} r="23" fill={C.nodeBody} stroke={n.color}
+                strokeWidth="1.5" filter="url(#fg-sm)" />
+              {/* Centre dot */}
+              <circle cx={n.x} cy={n.y} r="3.2" fill={n.color} fillOpacity="0.9" />
+              {/* Labels */}
+              <text x={n.x} y={n.y - 8} textAnchor="middle" fontSize="5.4" fontWeight="700"
+                fill={n.color} fontFamily="system-ui,sans-serif">{n.label[0]}</text>
+              <text x={n.x} y={n.y + 8} textAnchor="middle" fontSize="5.4" fontWeight="700"
+                fill={n.color} fontFamily="system-ui,sans-serif">{n.label[1]}</text>
+              {/* Count */}
+              <text x={n.x} y={n.y + 40} textAnchor="middle" fontSize="3.8"
+                fill={C.nodeCount} fontFamily="system-ui,sans-serif">{n.count}</text>
+            </g>
+          ))}
+        </svg>
       </div>
 
-      <div className="max-w-5xl mx-auto px-10 py-14 space-y-14">
+      {/* ══ Section divider ══ */}
+      <div style={{ display: "flex", alignItems: "center", padding: "0 28px", margin: "0 0 20px" }}>
+        <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg,transparent,${C.divGrad})` }} />
+        <span style={{ margin: "0 14px", fontSize: "9.5px", fontWeight: 700, color: C.divText,
+          letterSpacing: "0.18em", textTransform: "uppercase" }}>Policy Details</span>
+        <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg,${C.divGrad},transparent)` }} />
+      </div>
 
-        {/* ── Data Classification ── */}
-        <section>
-          <div className="mb-6">
-            <p className="text-indigo-600 text-xs font-bold uppercase tracking-[0.15em] mb-2">Classification</p>
-            <h2 className="text-3xl font-black text-slate-900">Data Classification Matrix</h2>
-            <p className="text-slate-400 text-base mt-1">All data stored by this system and its sensitivity level</p>
-          </div>
+      {/* ══ Content cards ══ */}
+      <div style={{ maxWidth: 1320, margin: "0 auto", padding: "0 20px 60px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 14 }}>
 
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-              {DATA_CLASSES.map((d, idx) => {
-                const s = sensitivityStyle(d.color);
-                return (
-                  <div key={d.type} className={`p-6 hover:bg-slate-50 transition-colors ${idx >= 3 ? "border-t border-slate-100" : ""}`}>
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <span className="text-slate-800 font-bold text-sm">{d.type}</span>
-                      <span className={`shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full border uppercase tracking-wide ${s.pill}`}>
-                        {d.sensitivity}
+          {CARD_ORDER.map((id, ci) => {
+            const node   = NODES.find(n => n.id === id);
+            const color  = node?.color ?? "#818cf8";
+            const delay  = `${ci * 0.06}s`;
+
+            /* ── Data Classification ── */
+            if (id === "classification") return (
+              <div key={id} className="mm-card" style={{ animationDelay: delay,
+                background: C.cardBg, border: `1px solid ${C.cardBorder}`,
+                borderTop: `2px solid ${color}`, borderRadius: 13, overflow: "hidden" }}>
+                <CardHeader color={color} title="Data Classification" sub="6 data types · sensitivity mapping"
+                  borderColor={C.cardHdrBorder} subColor={C.cardSub} />
+                <div style={{ padding: "10px 18px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+                  {DATA_CLASSES.map(d => {
+                    const s = SENS_PAL[d.sc];
+                    return (
+                      <div key={d.type} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ color: C.classTitle, fontSize: 12, fontWeight: 600, marginBottom: 1 }}>{d.type}</p>
+                          <p style={{ color: C.classField, fontSize: 10, lineHeight: 1.4 }}>{d.fields}</p>
+                        </div>
+                        <span style={{
+                          background: s.bg, border: `1px solid ${s.border}`,
+                          color: s.text, fontSize: 9, fontWeight: 700,
+                          padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap",
+                          textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0,
+                        }}>{d.sensitivity}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+
+            /* ── Compliance ── */
+            if (id === "compliance") return (
+              <div key={id} className="mm-card" style={{ animationDelay: delay,
+                background: C.cardBg, border: `1px solid ${C.cardBorder}`,
+                borderTop: `2px solid ${color}`, borderRadius: 13, overflow: "hidden" }}>
+                <CardHeader color={color} title="Compliance & Safety" sub="v1.2 · April 2026 · Internal use"
+                  borderColor={C.cardHdrBorder} subColor={C.cardSub} />
+                <div style={{ padding: "12px 18px" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>
+                    {COMPLIANCE.map(c => (
+                      <span key={c} style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        background: `${color}12`, border: `1px solid ${color}30`,
+                        color: C.compBadgeText, fontSize: 11, fontWeight: 600,
+                        padding: "4px 10px", borderRadius: 999,
+                      }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                        {c}
                       </span>
-                    </div>
-                    <p className="text-slate-400 text-xs leading-relaxed">{d.fields}</p>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex gap-4 flex-wrap">
-              {[["green","Internal"],["amber","Confidential"],["red","Restricted"]].map(([c, l]) => {
-                const s = sensitivityStyle(c);
-                return (
-                  <span key={l} className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${s.pill}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                    {l}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        </section>
 
-        {/* ── Data Flow ── */}
-        <section>
-          <div className="mb-6">
-            <p className="text-indigo-600 text-xs font-bold uppercase tracking-[0.15em] mb-2">Architecture</p>
-            <h2 className="text-3xl font-black text-slate-900">Data Flow Boundary</h2>
-            <p className="text-slate-400 text-base mt-1">Where your data travels and what crosses the cloud boundary</p>
-          </div>
+                  {/* Data flow mini-diagram */}
+                  <div style={{ background: C.flowBg, border: `1px solid ${C.flowBorder}`, borderRadius: 9, padding: "10px 12px", marginBottom: 12 }}>
+                    <p style={{ color: C.flowLabel, fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                      letterSpacing: "0.12em", marginBottom: 8 }}>Data Flow Boundary</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+                      {[
+                        { label: "Browser",  sub: "React UI",        accent: false },
+                        { label: "→",        sub: null,              arrow: true   },
+                        { label: "Backend",  sub: "FastAPI",         accent: false },
+                        { label: "→",        sub: null,              arrow: true, cloud: true },
+                        { label: "LLM APIs", sub: "OpenAI / Gemini", accent: true  },
+                      ].map((item, i) => item.arrow ? (
+                        <span key={i} style={{ color: item.cloud ? C.arrowCloud : C.arrowNorm, fontSize: 12, fontWeight: 300 }}>→</span>
+                      ) : (
+                        <div key={i} style={{
+                          background: item.accent ? `${color}14` : C.flowNodeBg,
+                          border: `1px solid ${item.accent ? color + "35" : C.flowNodeBorder}`,
+                          borderRadius: 6, padding: "4px 9px", textAlign: "center",
+                        }}>
+                          <p style={{ color: item.accent ? color : C.flowNodeText, fontSize: 9.5, fontWeight: 700 }}>{item.label}</p>
+                          <p style={{ color: C.flowNodeSub, fontSize: 8, marginTop: 1 }}>{item.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p style={{ textAlign: "center", fontSize: 8.5, color: C.flowLabel, marginTop: 7 }}>
+                      localhost only · browser never contacts cloud
+                    </p>
+                  </div>
 
-          <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-            <div className="flex items-center gap-4 flex-wrap">
-              {/* Browser */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-6 py-5 text-center min-w-[120px]">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
+                  {/* Live audit feed — admin only */}
+                  {isAdmin && (
+                    <div style={{ background: C.auditBg, border: `1px solid ${C.auditBorder}`, borderRadius: 9, marginBottom: 12, overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "8px 12px", borderBottom: `1px solid ${C.auditHdrBorder}` }}>
+                        <span style={{ color: C.auditHdrText, fontSize: 9, fontWeight: 700,
+                          textTransform: "uppercase", letterSpacing: "0.12em" }}>Live Audit Feed</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: color,
+                            boxShadow: `0 0 5px ${color}`, animation: "hub-pulse 2s ease-in-out infinite" }} />
+                          <span style={{ color, fontSize: 8.5, fontWeight: 700 }}>LIVE</span>
+                        </span>
+                      </div>
+
+                      <div style={{ maxHeight: 168, overflowY: "auto" }}>
+                        {auditLoading ? (
+                          Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
+                              padding: "7px 12px", borderBottom: `1px solid ${C.auditHdrBorder}` }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.skelDot, flexShrink: 0 }} />
+                              <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.skelBar }} />
+                              <div style={{ width: 32, height: 7, borderRadius: 4, background: C.skelBar }} />
+                            </div>
+                          ))
+                        ) : auditFeed.length === 0 ? (
+                          <p style={{ color: C.noEntries, fontSize: 10, padding: "12px", textAlign: "center" }}>
+                            No entries found
+                          </p>
+                        ) : auditFeed.map((entry, i) => {
+                          const ac = actionColor(entry.action);
+                          const [cat, ...rest] = (entry.action || "").split(".");
+                          return (
+                            <div key={entry.id ?? i} style={{
+                              display: "flex", alignItems: "center", gap: 8,
+                              padding: "7px 12px",
+                              borderBottom: i < auditFeed.length - 1 ? `1px solid ${C.auditRowBorder}` : "none",
+                            }}>
+                              <div style={{ width: 6, height: 6, borderRadius: "50%",
+                                background: ac, flexShrink: 0, boxShadow: `0 0 4px ${ac}80` }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ color: ac, fontSize: 9.5, fontWeight: 700, marginRight: 4 }}>{cat}</span>
+                                <span style={{ color: C.auditActRest, fontSize: 9.5 }}>.{rest.join(".")}</span>
+                              </div>
+                              <span style={{ color: C.auditUser, fontSize: 9, flexShrink: 0 }}>
+                                {entry.username ?? "system"}
+                              </span>
+                              <span style={{ color: C.auditTime, fontSize: 8.5, flexShrink: 0, minWidth: 42, textAlign: "right" }}>
+                                {relTime(entry.timestamp)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Warning */}
+                  <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)",
+                    borderRadius: 9, padding: "10px 13px" }}>
+                    <p style={{ color: C.warningText, fontSize: 11, fontWeight: 700, marginBottom: 3 }}>
+                      ⚠  No Real Data Policy
+                    </p>
+                    <p style={{ color: C.warningBody, fontSize: 11, lineHeight: 1.6 }}>
+                      All data must be fully synthetic. Do not enter real employee names, customer records,
+                      or production credentials into any form in this application.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-slate-800 text-sm font-bold">Browser</p>
-                <p className="text-slate-400 text-xs mt-0.5">React UI</p>
               </div>
+            );
 
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-px bg-indigo-300" />
-                  <span className="text-[10px] font-bold text-indigo-600 uppercase bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">localhost</span>
-                  <div className="w-10 h-px bg-indigo-300" />
-                </div>
-              </div>
-
-              {/* Backend */}
-              <div className="bg-indigo-50 border border-indigo-300 rounded-2xl px-6 py-5 text-center min-w-[120px]">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-                  </svg>
-                </div>
-                <p className="text-slate-800 text-sm font-bold">Backend</p>
-                <p className="text-slate-400 text-xs mt-0.5">FastAPI + SQLite</p>
-              </div>
-
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-px bg-amber-400" />
-                  <span className="text-[10px] font-bold text-amber-700 uppercase bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">HTTPS · Cloud</span>
-                  <div className="w-10 h-px bg-amber-400" />
-                </div>
-              </div>
-
-              {/* LLM APIs */}
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-6 py-5 text-center min-w-[120px]">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                  </svg>
-                </div>
-                <p className="text-slate-800 text-sm font-bold">LLM APIs</p>
-                <p className="text-slate-400 text-xs mt-0.5">OpenAI / Anthropic</p>
-              </div>
-            </div>
-
-            <p className="text-slate-400 text-sm mt-6 leading-relaxed">
-              The browser has no direct access to cloud APIs. All LLM calls originate from the backend only. Evaluation prompts and incident text cross the cloud boundary — never include real data.
-            </p>
-          </div>
-        </section>
-
-        {/* ── Policy Sections ── */}
-        <section>
-          <div className="mb-6">
-            <p className="text-indigo-600 text-xs font-bold uppercase tracking-[0.15em] mb-2">Policies</p>
-            <h2 className="text-3xl font-black text-slate-900">Policy Details</h2>
-            <p className="text-slate-400 text-base mt-1">Specific rules governing data handling in this system</p>
-          </div>
-
-          <div className="space-y-4">
-            {SECTIONS.map(s => (
-              <div key={s.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="px-7 py-5 border-b border-slate-100 bg-slate-50 flex items-center gap-4">
-                  <span className="text-2xl font-black text-indigo-200 tabular-nums leading-none">{s.label}</span>
-                  <h3 className="text-base font-black text-slate-800">{s.title}</h3>
-                </div>
-                <ul className="divide-y divide-slate-50">
-                  {s.rules.map((rule, i) => (
-                    <li key={i} className="flex items-start gap-4 px-7 py-4 hover:bg-slate-50 transition-colors">
-                      <span className="mt-1 w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                      </span>
-                      <p className="text-slate-600 text-sm leading-relaxed">{rule}</p>
+            /* ── Policy rule cards ── */
+            const policy = POLICY_CARDS.find(p => p.id === id);
+            if (!policy) return null;
+            return (
+              <div key={id} className="mm-card" style={{ animationDelay: delay,
+                background: C.cardBg, border: `1px solid ${C.cardBorder}`,
+                borderTop: `2px solid ${color}`, borderRadius: 13, overflow: "hidden" }}>
+                <CardHeader color={color} title={policy.title} sub="4 governing rules"
+                  borderColor={C.cardHdrBorder} subColor={C.cardSub} />
+                <ul style={{ padding: "10px 18px 16px", display: "flex", flexDirection: "column", gap: 10, listStyle: "none", margin: 0 }}>
+                  {policy.rules.map((rule, ri) => (
+                    <li key={ri} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <span style={{
+                        width: 18, height: 18, borderRadius: "50%",
+                        background: `${color}14`, border: `1px solid ${color}35`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 8, fontWeight: 800, color, flexShrink: 0, marginTop: 1,
+                      }}>{ri + 1}</span>
+                      <span style={{ color: C.ruleText, fontSize: 12, lineHeight: 1.65 }}>{rule}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-            ))}
-          </div>
-        </section>
+            );
+          })}
 
-        {/* ── Warning ── */}
-        <section>
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-8 relative overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-red-400 to-transparent rounded-t-2xl" />
-            <div className="flex items-start gap-5">
-              <div className="w-12 h-12 rounded-2xl bg-red-100 border border-red-200 flex items-center justify-center shrink-0">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-red-800 font-black text-lg mb-2">No Real Data Policy</p>
-                <p className="text-red-600 text-sm leading-relaxed mb-3">
-                  All data entered into this system must be fully synthetic. Do not enter real employee names, customer records, proprietary company information, or production API credentials into any form in this application.
-                </p>
-                <p className="text-red-500 text-xs font-bold uppercase tracking-wider">
-                  Violation may expose sensitive information to cloud AI providers.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-slate-100 bg-white py-8 text-center">
-        <p className="text-slate-400 text-sm">AI Pulse · Internal Governance · v1.2 · April 2026</p>
+      {/* ══ Footer ══ */}
+      <div style={{ borderTop: `1px solid ${C.footerBorder}`, padding: "18px", textAlign: "center" }}>
+        <p style={{ color: C.footerText, fontSize: 11 }}>AI Pulse · Internal Governance · v1.2 · April 2026</p>
       </div>
+    </div>
+  );
+}
 
+/* ── Shared sub-component ─────────────────────────────────────── */
+function CardHeader({ color, title, sub, borderColor, subColor }) {
+  return (
+    <div style={{ padding: "14px 18px 11px", borderBottom: `1px solid ${borderColor}`, display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{
+        width: 30, height: 30, borderRadius: "50%",
+        background: `${color}14`, border: `1px solid ${color}35`,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      }}>
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: color,
+          boxShadow: `0 0 6px ${color}` }} />
+      </div>
+      <div>
+        <p style={{ color, fontSize: 11, fontWeight: 700, letterSpacing: "0.09em",
+          textTransform: "uppercase", marginBottom: 1 }}>{title}</p>
+        <p style={{ color: subColor, fontSize: 10 }}>{sub}</p>
+      </div>
     </div>
   );
 }
