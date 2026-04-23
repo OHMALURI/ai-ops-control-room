@@ -5,26 +5,36 @@ import {
 import api from '../api.js';
 import EvaluationDashboard from '../components/EvaluationDashboard.jsx';
 
-const BENCHMARKS = [
-  { key: 'single_turn', label: 'Single-Turn', color: '#4f46e5' },
-  { key: 'multi_turn',  label: 'Multi-Turn',  color: '#9333ea' },
-];
-
 const METRICS = [
-  { key: 'quality_score', label: 'Quality Score', color: '#4f46e5', unit: '%' },
-  { key: 'accuracy', label: 'Accuracy', color: '#6366f1', unit: '%' },
-  { key: 'relevance_score', label: 'Relevance', color: '#0891b2', unit: '%' },
-  { key: 'factuality_score', label: 'Factuality', color: '#16a34a', unit: '%' },
-  { key: 'toxicity_score', label: 'Safety', color: '#ef4444', unit: '%' },
+  { key: 'quality_score',       label: 'Quality Score',        color: '#4f46e5', unit: '%' },
+  { key: 'accuracy',            label: 'Accuracy',             color: '#6366f1', unit: '%' },
+  { key: 'relevance_score',     label: 'Relevance',            color: '#0891b2', unit: '%' },
+  { key: 'factuality_score',    label: 'Factuality',           color: '#16a34a', unit: '%' },
+  { key: 'toxicity_score',      label: 'Safety',               color: '#ef4444', unit: '%' },
   { key: 'instruction_following', label: 'Instruction Following', color: '#9333ea', unit: '%' },
-  { key: 'latency_ms', label: 'Latency', color: '#f59e0b', unit: 'ms' },
+  { key: 'latency_ms',          label: 'Runtime',              color: '#f59e0b', unit: 'ms' },
 ];
 
-function StatusBadge({ score }) {
-  if (score == null) return null;
-  if (score >= 80) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">Good</span>;
-  if (score >= 50) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">Warn</span>;
-  return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">Poor</span>;
+function StatusBadge({ score, prevScore }) {
+  if (score == null) return <span className="text-gray-300 text-xs">—</span>;
+
+  // Rule 3: below 50 is always drift
+  if (score < 50) return (
+    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600">
+      <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+      Drift
+    </span>
+  );
+
+  // Rule 2: first run thresholds
+  if (prevScore == null) {
+    if (score < 70) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />Warn</span>;
+    return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />Good</span>;
+  }
+
+  // Subsequent runs: dropped from previous → warn, else good
+  if (score < prevScore) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />Warn</span>;
+  return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />Good</span>;
 }
 
 export default function PerformanceLogs() {
@@ -34,15 +44,11 @@ export default function PerformanceLogs() {
   const [logs, setLogs]               = useState([]);
   const [loading, setLoading]         = useState(false);
   const [servicesLoading, setServicesLoading] = useState(true);
-  const [viewMode, setViewMode]       = useState('by_benchmark');
-  const [activeBenchmark, setActiveBenchmark] = useState('single_turn');
   const [activeMetric, setActiveMetric] = useState('quality_score');
   const [visibleLines, setVisibleLines] = useState({});
   const [search, setSearch]           = useState('');
-  const [tableBenchmarkFilter, setTableBenchmarkFilter] = useState('all');
   const [expandedEval, setExpandedEval] = useState(null);
 
-  // Fetch all services on mount
   useEffect(() => {
     api.get('/services/')
       .then(r => {
@@ -53,69 +59,44 @@ export default function PerformanceLogs() {
       .finally(() => setServicesLoading(false));
   }, []);
 
-  // Fetch evaluations whenever selected service changes
   useEffect(() => {
     if (!selected) return;
-    const fetchSelectedData = async () => {
-      setLoading(true);
-      try {
-        const r = await api.get(`/evaluations/${selected.id}`);
-        setLogs(r.data || []);
-      } catch {
-        setLogs([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSelectedData();
+    setLoading(true);
+    api.get(`/evaluations/${selected.id}`)
+      .then(r => setLogs(r.data || []))
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
   }, [selected]);
 
-  // Initialize visible lines when mode changes
   useEffect(() => {
-    const keys = viewMode === 'by_benchmark' ? METRICS.map(m => m.key) : BENCHMARKS.map(b => b.key);
     const initialVisible = {};
-    keys.forEach(k => initialVisible[k] = true);
+    METRICS.forEach(m => initialVisible[m.key] = true);
     setTimeout(() => setVisibleLines(initialVisible), 0);
-  }, [viewMode]);
+  }, []);
 
   const toggleLine = (key) => setVisibleLines(p => ({ ...p, [key]: !p[key] }));
-
-  const activeLegendItems = viewMode === 'by_benchmark' ? METRICS : BENCHMARKS;
-  const isAllSelected = activeLegendItems.every(i => visibleLines[i.key]);
-
+  const isAllSelected = METRICS.every(m => visibleLines[m.key]);
   const toggleAllLines = () => {
-    const newVisible = { ...visibleLines };
-    activeLegendItems.forEach(i => newVisible[i.key] = !isAllSelected);
+    const newVisible = {};
+    METRICS.forEach(m => newVisible[m.key] = !isAllSelected);
     setVisibleLines(newVisible);
   };
 
-  // Chart data — reverse to chronological order
   const chartData = [...logs].reverse().map(e => {
-    const base = {
+    const row = {
       time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       fullDate: new Date(e.timestamp).toLocaleString(),
     };
-    
-    if (viewMode === 'by_benchmark') {
-      if ((e.dataset_type || 'single_turn') === activeBenchmark) {
-         METRICS.forEach(m => base[m.key] = m.key === 'latency_ms' ? e[m.key] : parseFloat((e[m.key] || 0).toFixed(1)));
-         return base;
-      }
-      return null;
-    } else {
-      base[e.dataset_type || 'single_turn'] = activeMetric === 'latency_ms' ? e[activeMetric] : parseFloat((e[activeMetric] || 0).toFixed(1));
-      return base;
-    }
-  }).filter(Boolean);
-
-  // Filtered table rows
-  const filteredLogs = logs.filter(e => {
-    const ts = new Date(e.timestamp).toLocaleString().toLowerCase();
-    const searchMatch = ts.includes(search.toLowerCase()) || String(e.quality_score).includes(search);
-    const bmMatch = tableBenchmarkFilter === 'all' || (e.dataset_type || 'single_turn') === tableBenchmarkFilter;
-    return searchMatch && bmMatch;
+    METRICS.forEach(m => {
+      row[m.key] = m.key === 'latency_ms' ? e[m.key] : parseFloat((e[m.key] || 0).toFixed(1));
+    });
+    return row;
   });
 
+  const filteredLogs = logs.filter(e => {
+    const ts = new Date(e.timestamp).toLocaleString().toLowerCase();
+    return ts.includes(search.toLowerCase()) || String(e.quality_score).includes(search);
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 p-8">
@@ -127,7 +108,7 @@ export default function PerformanceLogs() {
           <p className="text-slate-500 mt-1 text-base">Run evaluations, view logs, and monitor model performance.</p>
         </div>
 
-        {/* Top-level page tabs */}
+        {/* Page tabs */}
         <div className="flex gap-1 mb-6 border-b border-gray-200">
           {[{ key: 'eval_dashboard', label: '📊 Evaluation Dashboard' }, { key: 'logs', label: '📋 Performance Logs' }].map(tab => (
             <button
@@ -146,7 +127,7 @@ export default function PerformanceLogs() {
 
         <div className="flex gap-6">
 
-          {/* Sidebar — service picker (shared between tabs) */}
+          {/* Sidebar — service picker */}
           <aside className="w-56 shrink-0">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <p className="px-4 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">Services</p>
@@ -187,7 +168,6 @@ export default function PerformanceLogs() {
             {/* Performance Logs Tab */}
             {pageView === 'logs' && (
             <>
-            {/* Service Metadata */}
             {selected && (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center justify-between text-sm flex-wrap gap-4">
                 <div>
@@ -213,7 +193,6 @@ export default function PerformanceLogs() {
               </div>
             )}
 
-            {/* Section Header */}
             <div className="flex gap-1 border-b border-gray-200 mb-1">
               <span className="px-4 py-2 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-700">Evaluation History</span>
             </div>
@@ -225,25 +204,13 @@ export default function PerformanceLogs() {
                   Evaluation History {selected ? `— ${selected.name}` : ''}
                   {logs.length > 0 && <span className="ml-2 text-xs font-normal text-gray-400">({logs.length} records)</span>}
                 </h2>
-                <div className="flex gap-3">
-                  <select
-                    value={tableBenchmarkFilter}
-                    onChange={e => setTableBenchmarkFilter(e.target.value)}
-                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700 font-semibold"
-                  >
-                    <option value="all">All Benchmarks</option>
-                    {BENCHMARKS.map(b => (
-                      <option key={b.key} value={b.key}>{b.label}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="Search…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 w-48"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="Search…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 w-48"
+                />
               </div>
               {loading ? (
                 <p className="text-sm text-gray-400 animate-pulse px-5 py-6">Loading logs…</p>
@@ -255,42 +222,27 @@ export default function PerformanceLogs() {
                     <thead className="bg-slate-50 text-slate-500 uppercase text-xs tracking-wide">
                       <tr>
                         <th className="px-5 py-3 text-left font-semibold">Timestamp</th>
-                        <th className="px-5 py-3 text-left font-semibold">Benchmark</th>
                         <th className="px-5 py-3 text-left font-semibold">Quality Score</th>
-                        <th className="px-5 py-3 text-left font-semibold">Latency</th>
+                        <th className="px-5 py-3 text-left font-semibold">Runtime</th>
                         <th className="px-5 py-3 text-left font-semibold">Drift</th>
                         <th className="px-5 py-3 text-left font-semibold">Status</th>
                         <th className="px-5 py-3 text-right font-semibold">Details</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 object-top">
-                      {filteredLogs.map((e) => {
+                      {filteredLogs.map((e, idx) => {
                         const isExp = expandedEval === e.id;
+                        const prevScore = filteredLogs[idx + 1]?.quality_score ?? null;
                         let samples = [];
                         try {
                           const parsed = JSON.parse(e.check_results);
-                          if (parsed && parsed.per_sample_scores) {
-                            samples = parsed.per_sample_scores;
-                          }
-                        } catch {
-                          // ignore json parse error
-                        }
-                        const btype = e.dataset_type || 'single_turn';
-                        const benchmark = BENCHMARKS.find(x => x.key === btype);
+                          if (parsed?.per_sample_scores) samples = parsed.per_sample_scores;
+                        } catch { /* ignore */ }
 
                         return (
                           <React.Fragment key={e.id}>
                             <tr className="hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{new Date(e.timestamp).toLocaleString()}</td>
-                              <td className="px-5 py-3">
-                                {benchmark ? (
-                                  <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: `${benchmark.color}15`, color: benchmark.color }}>
-                                    {benchmark.label}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-400">{btype}</span>
-                                )}
-                              </td>
                               <td className="px-5 py-3 font-semibold text-indigo-700 tabular-nums">{e.quality_score != null ? `${e.quality_score.toFixed(1)}%` : '—'}</td>
                               <td className="px-5 py-3 text-emerald-700 tabular-nums">{e.latency_ms ? `${e.latency_ms}ms` : '—'}</td>
                               <td className="px-5 py-3">
@@ -298,9 +250,9 @@ export default function PerformanceLogs() {
                                   ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 animate-pulse">Drift</span>
                                   : <span className="text-gray-300 text-xs">—</span>}
                               </td>
-                              <td className="px-5 py-3"><StatusBadge score={e.quality_score} /></td>
+                              <td className="px-5 py-3"><StatusBadge score={e.quality_score} prevScore={prevScore} /></td>
                               <td className="px-5 py-3 text-right">
-                                <button 
+                                <button
                                   onClick={() => setExpandedEval(isExp ? null : e.id)}
                                   className="text-xs px-3 py-1 font-semibold rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
                                 >
@@ -310,46 +262,60 @@ export default function PerformanceLogs() {
                             </tr>
                             {isExp && (
                               <tr>
-                                <td colSpan={7} className="bg-slate-50 p-6 border-b border-gray-200">
+                                <td colSpan={6} className="bg-slate-50 p-6 border-b border-gray-200">
                                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col gap-4 p-4">
                                     <h4 className="font-bold text-sm text-gray-700 mb-2 border-b pb-2">Sample Evaluation Details</h4>
                                     {samples.length === 0 ? (
                                       <p className="text-xs text-gray-500">No sample details available.</p>
                                     ) : (
-                                      samples.map((s, idx) => (
-                                        <div key={idx} className="bg-gray-50 p-4 rounded border border-gray-100 flex flex-col gap-2">
-                                          <div className="flex justify-between items-start">
-                                            <div className="flex-1">
+                                      samples.map((s, idx) => {
+                                        const scorePct = s.score_pct ?? (s.si != null ? s.si * 100 : null);
+                                        const methodColor = s.method?.startsWith('exact') ? 'bg-blue-100 text-blue-700'
+                                          : s.method?.startsWith('safety') ? 'bg-orange-100 text-orange-700'
+                                          : 'bg-purple-100 text-purple-700';
+                                        return (
+                                          <div key={idx} className="bg-gray-50 p-4 rounded border border-gray-100 flex flex-col gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              {s.category && (
+                                                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded uppercase tracking-wider">{s.category}</span>
+                                              )}
+                                              {s.expected_behavior && (
+                                                <span className={`text-[9px] font-bold px-1 rounded ${s.expected_behavior === 'refuse' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                                  {s.expected_behavior}
+                                                </span>
+                                              )}
+                                              {s.method && (
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${methodColor}`}>{s.method}</span>
+                                              )}
+                                              {scorePct != null && (
+                                                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded ${scorePct >= 80 ? 'bg-green-100 text-green-700' : scorePct >= 55 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                                                  Score: {scorePct.toFixed(0)}%
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div>
                                               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Input</span>
                                               <p className="text-xs font-mono text-gray-700 mt-1 whitespace-pre-wrap">{s.input}</p>
                                             </div>
-                                          </div>
-                                          <div className="flex gap-4 mt-2">
-                                            <div className="flex-1 bg-green-50 p-2 rounded border border-green-100">
-                                              <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Desired Output</span>
-                                              <p className="text-xs font-mono text-green-800 mt-1 break-words">{s.expected_output}</p>
+                                            <div className="flex gap-4">
+                                              <div className="flex-1 bg-green-50 p-2 rounded border border-green-100">
+                                                <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider">Expected</span>
+                                                <p className="text-xs font-mono text-green-800 mt-1 break-words">{s.expected_output}</p>
+                                              </div>
+                                              <div className="flex-1 bg-blue-50 p-2 rounded border border-blue-100">
+                                                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Actual Output</span>
+                                                <p className="text-xs font-mono text-blue-800 mt-1 break-words">{s.actual_output || '—'}</p>
+                                              </div>
                                             </div>
-                                            <div className="flex-1 bg-blue-50 p-2 rounded border border-blue-100">
-                                              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Actual Output</span>
-                                              <p className="text-xs font-mono text-blue-800 mt-1 break-words">{s.actual_output || '—'}</p>
-                                            </div>
+                                            {s.explanation && (
+                                              <div className="bg-white border border-gray-200 rounded px-3 py-1.5">
+                                                <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Judge Note</span>
+                                                <p className="text-xs italic text-gray-500 mt-0.5">{s.explanation}</p>
+                                              </div>
+                                            )}
                                           </div>
-                                          <div className="mt-2 flex flex-wrap gap-2">
-                                            {['accuracy', 'relevance_score', 'factuality_score', 'toxicity_score', 'instruction_following'].map(mkey => (
-                                              s[mkey] != null && (
-                                                <div key={mkey} className="flex flex-col bg-white border border-gray-200 px-2 py-1 rounded">
-                                                  <span className="text-[9px] uppercase tracking-wider text-gray-400 font-bold">
-                                                    {METRICS.find(x => x.key === mkey)?.label || mkey.replace('_', ' ')}
-                                                  </span>
-                                                  <span className={`text-xs font-bold ${s[mkey] >= 80 ? 'text-green-600' : s[mkey] >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                                                    {s[mkey]}%
-                                                  </span>
-                                                </div>
-                                              )
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ))
+                                        );
+                                      })
                                     )}
                                   </div>
                                 </td>

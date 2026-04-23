@@ -11,29 +11,24 @@ try:
     from database import get_db, SessionLocal
     from models import Service, Evaluation
     from services.evaluator import (
-        run_evaluation, GOLDEN_DATASETS, DATASET_LABELS,
-        request_stop, _reset_stop_flag, EvaluationStopped,
+        run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
 except ImportError:
     from ..database import get_db, SessionLocal
     from ..models import Service, Evaluation
     from ..services.evaluator import (
-        run_evaluation, GOLDEN_DATASETS, DATASET_LABELS,
-        request_stop, _reset_stop_flag, EvaluationStopped,
+        run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
 
 router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SSE STREAMING  — runs single_turn then multi_turn, streams all progress
+# SSE STREAMING  — streams progress events for the evaluation run
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/run-stream/{service_id}")
 def run_evaluation_stream(service_id: int):
-    """
-    SSE endpoint — streams progress events for both single-turn and multi-turn
-    evaluations running sequentially.
-    """
+    """SSE endpoint — streams progress events while the evaluation runs."""
     progress_queue: queue_module.Queue = queue_module.Queue()
 
     def run_in_thread():
@@ -44,16 +39,8 @@ def run_evaluation_stream(service_id: int):
             def on_progress(event):
                 progress_queue.put(event)
 
-            for dtype in ("single_turn", "multi_turn"):
-                progress_queue.put({
-                    "step": f"section_{dtype}",
-                    "label": DATASET_LABELS[dtype],
-                    "status": "section",
-                    "section": dtype,
-                })
-                run_evaluation(service_id, db, dataset_type=dtype, on_progress=on_progress)
-
-            progress_queue.put({"step": "complete", "label": "All evaluations complete", "status": "complete"})
+            run_evaluation(service_id, db, on_progress=on_progress)
+            progress_queue.put({"step": "complete", "label": "Evaluation complete", "status": "complete"})
 
         except EvaluationStopped:
             progress_queue.put({"step": "stopped", "label": "Evaluation stopped by user", "status": "stopped"})
@@ -101,59 +88,31 @@ def stop_evaluation(service_id: int):
 # STANDARD ROUTES
 # ─────────────────────────────────────────────────────────────────────────────
 @router.post("/run/{service_id}")
-def run_service_evaluation(
-    service_id: int,
-    dataset_type: str = Query(default="single_turn"),
-    db: Session = Depends(get_db),
-):
+def run_service_evaluation(service_id: int, db: Session = Depends(get_db)):
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-    return run_evaluation(service_id, db, dataset_type=dataset_type)
-
-
-@router.post("/run-all/{service_id}")
-def run_all_evaluations(service_id: int, db: Session = Depends(get_db)):
-    service = db.query(Service).filter(Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
-    results = []
-    for dtype in GOLDEN_DATASETS.keys():
-        try:
-            ev = run_evaluation(service_id, db, dataset_type=dtype)
-            results.append({"dataset_type": dtype, "id": ev.id, "quality_score": ev.quality_score})
-        except Exception as e:
-            results.append({"dataset_type": dtype, "error": str(e)})
-    return results
-
-
-@router.get("/dataset-types")
-def list_dataset_types():
-    return [{"key": k, "label": DATASET_LABELS[k]} for k in GOLDEN_DATASETS.keys()]
+    return run_evaluation(service_id, db)
 
 
 @router.get("/latest/{service_id}")
-def get_latest_evaluation(
-    service_id: int,
-    dataset_type: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
-):
-    q = db.query(Evaluation).filter(Evaluation.service_id == service_id)
-    if dataset_type:
-        q = q.filter(Evaluation.dataset_type == dataset_type)
-    evaluation = q.order_by(Evaluation.timestamp.desc()).first()
+def get_latest_evaluation(service_id: int, db: Session = Depends(get_db)):
+    evaluation = (
+        db.query(Evaluation)
+        .filter(Evaluation.service_id == service_id)
+        .order_by(Evaluation.timestamp.desc())
+        .first()
+    )
     if not evaluation:
         raise HTTPException(status_code=404, detail="No evaluations found for this service")
     return evaluation
 
 
 @router.get("/{service_id}")
-def get_service_evaluations(
-    service_id: int,
-    dataset_type: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
-):
-    q = db.query(Evaluation).filter(Evaluation.service_id == service_id)
-    if dataset_type:
-        q = q.filter(Evaluation.dataset_type == dataset_type)
-    return q.order_by(Evaluation.timestamp.desc()).all()
+def get_service_evaluations(service_id: int, db: Session = Depends(get_db)):
+    return (
+        db.query(Evaluation)
+        .filter(Evaluation.service_id == service_id)
+        .order_by(Evaluation.timestamp.desc())
+        .all()
+    )

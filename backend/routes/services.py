@@ -134,6 +134,61 @@ def get_available_models(db: Session = Depends(get_db)):
     results.sort(key=lambda x: x["id"])
     return results
 
+@router.get("/test-gemini")
+def test_gemini_connection():
+    """
+    Ping the Gemini API with a minimal prompt and return connection status,
+    latency, the active model name, and a snippet of the response.
+    """
+    import os as _os
+    api_key = _os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {
+            "success": False,
+            "latency_ms": 0,
+            "model": None,
+            "response_snippet": None,
+            "error": "GEMINI_API_KEY is not set in .env",
+        }
+
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        return {
+            "success": False,
+            "latency_ms": 0,
+            "model": None,
+            "response_snippet": None,
+            "error": "google-generativeai package not installed (pip install google-generativeai)",
+        }
+
+    model_name = _os.getenv("GEMINI_JUDGE_MODEL", "gemini-2.5-flash")
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+
+    start = time.time()
+    try:
+        resp = model.generate_content("Reply with exactly two words: API OK")
+        latency_ms = int((time.time() - start) * 1000)
+        snippet = resp.text.strip()[:120] if resp.text else "(empty response)"
+        return {
+            "success": True,
+            "latency_ms": latency_ms,
+            "model": model_name,
+            "response_snippet": snippet,
+            "error": None,
+        }
+    except Exception as exc:
+        latency_ms = int((time.time() - start) * 1000)
+        return {
+            "success": False,
+            "latency_ms": latency_ms,
+            "model": model_name,
+            "response_snippet": None,
+            "error": str(exc),
+        }
+
+
 @router.get("/{service_id}")
 def get_service(service_id: int, db: Session = Depends(get_db)):
     """Return a single service by ID."""

@@ -4,11 +4,6 @@ import api from '../api.js';
 
 const BASE_URL = 'http://localhost:8000/api';
 
-const DATASET_TYPES = [
-  { key: 'single_turn', label: 'Single-Turn', tag: 'RAG & output quality',  tagColor: 'bg-blue-100 text-blue-700' },
-  { key: 'multi_turn',  label: 'Multi-Turn',  tag: 'conversational',        tagColor: 'bg-purple-100 text-purple-700' },
-];
-
 // ── Progress step helpers ─────────────────────────────────────────────────────
 function fmtDuration(ms) {
   if (ms == null) return '';
@@ -46,7 +41,6 @@ function StepIcon({ status }) {
       </svg>
     );
   }
-  // pending
   return <div className="w-4 h-4 rounded-full border-2 border-gray-300 shrink-0" />;
 }
 
@@ -62,9 +56,6 @@ function ScorePill({ score }) {
   );
 }
 
-const SECTION_LABELS = { single_turn: 'Single-Turn Metrics', multi_turn: 'Multi-Turn Metrics' };
-const SECTION_COLORS = { single_turn: 'text-blue-600 bg-blue-50 border-blue-200', multi_turn: 'text-purple-600 bg-purple-50 border-purple-200' };
-
 
 // ── Main ServiceCard ──────────────────────────────────────────────────────────
 const ServiceCard = ({ service }) => {
@@ -74,24 +65,22 @@ const ServiceCard = ({ service }) => {
   const [allEvals, setAllEvals]             = useState([]);
   const [isLoading, setIsLoading]           = useState(false);
   const [isFetchingInitial, setIsFetchingInitial] = useState(true);
-  const [selectedDataset, setSelectedDataset]     = useState('single_turn');
-  const [progressSteps, setProgressSteps]   = useState([]);   // [{step,label,status,section,duration_ms,score}]
-  const [evalFinished, setEvalFinished]     = useState(false); // true once stream ends
+  const [progressSteps, setProgressSteps]   = useState([]);
+  const [evalFinished, setEvalFinished]     = useState(false);
 
   const eventSourceRef = useRef(null);
   const progressEndRef = useRef(null);
 
-  const fetchEvaluations = async (dsType) => {
-    const dtype = dsType || selectedDataset;
+  const fetchEvaluations = async () => {
     try {
       try {
-        const latestRes = await api.get(`/evaluations/latest/${service.id}?dataset_type=${dtype}`);
+        const latestRes = await api.get(`/evaluations/latest/${service.id}`);
         setLatestEval(latestRes.data);
       } catch (err) {
         if (err.response?.status === 404) setLatestEval(null);
       }
       try {
-        const allRes = await api.get(`/evaluations/${service.id}?dataset_type=${dtype}`);
+        const allRes = await api.get(`/evaluations/${service.id}`);
         setAllEvals(allRes.data || []);
       } catch (err) {
         if (err.response?.status === 404) setAllEvals([]);
@@ -102,17 +91,10 @@ const ServiceCard = ({ service }) => {
   };
 
   useEffect(() => {
-    fetchEvaluations(selectedDataset);
-  }, [service.id, selectedDataset]);
-
-  const handleDatasetChange = (key) => {
-    setSelectedDataset(key);
-    setLatestEval(null);
-    setAllEvals([]);
-  };
+    fetchEvaluations();
+  }, [service.id]);
 
   const handleRunEvaluation = () => {
-    // Close any existing stream
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
@@ -126,8 +108,8 @@ const ServiceCard = ({ service }) => {
     es.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      if (data.status === 'section') {
-        // Section header marker — add as a special "section" item
+      // qa_pair events always append (display-only, never updated)
+      if (data.status === 'qa_pair') {
         setProgressSteps(prev => [...prev, data]);
         return;
       }
@@ -147,9 +129,7 @@ const ServiceCard = ({ service }) => {
         eventSourceRef.current = null;
         setIsLoading(false);
         setEvalFinished(true);
-        // Refresh both tabs
-        fetchEvaluations('single_turn');
-        fetchEvaluations(selectedDataset);
+        fetchEvaluations();
       }
     };
 
@@ -160,7 +140,7 @@ const ServiceCard = ({ service }) => {
       setEvalFinished(true);
       setProgressSteps(prev => [
         ...prev,
-        { step: 'conn_error', label: 'Connection lost', status: 'error', section: '' },
+        { step: 'conn_error', label: 'Connection lost', status: 'error' },
       ]);
     };
   };
@@ -171,7 +151,6 @@ const ServiceCard = ({ service }) => {
     } catch (e) {
       console.error('Stop request failed', e);
     }
-    // EventSource will receive the stopped event and close itself
   };
 
   // Auto-scroll progress list
@@ -184,11 +163,23 @@ const ServiceCard = ({ service }) => {
   const latency      = latestEval?.latency_ms ? `${latestEval.latency_ms}ms` : 'No data';
   const driftDetected = latestEval?.drift_triggered === true;
 
-  const sampleDetails = (() => {
+  const serviceStatus = (() => {
+    if (!latestEval) return null;
+    const q = latestEval.quality_score;
+    if (driftDetected || q < 50) return 'drift';
+    if (q < 70) return 'warn';
+    return 'good';
+  })();
+
+  const { sampleDetails, categoryScores } = (() => {
     try {
-      if (!latestEval?.check_results) return [];
-      return JSON.parse(latestEval.check_results).per_sample_scores || [];
-    } catch { return []; }
+      if (!latestEval?.check_results) return { sampleDetails: [], categoryScores: {} };
+      const parsed = JSON.parse(latestEval.check_results);
+      return {
+        sampleDetails:  parsed.per_sample_scores || [],
+        categoryScores: parsed.category_scores   || {},
+      };
+    } catch { return { sampleDetails: [], categoryScores: {} }; }
   })();
 
   const envText  = service.environment || 'DEV';
@@ -198,11 +189,10 @@ const ServiceCard = ({ service }) => {
     : 'bg-blue-100 text-blue-800 border-blue-200';
 
   const METRICS = [
-    { key: 'accuracy',              label: 'Accuracy',             color: '#4f46e5', desc: 'GEval accuracy / conversation completeness' },
-    { key: 'relevance_score',       label: 'Relevance',            color: '#0891b2', desc: 'Answer relevancy / turn relevancy' },
-    { key: 'factuality_score',      label: 'Factuality',           color: '#16a34a', desc: 'Faithfulness / coherence' },
-    { key: 'toxicity_score',        label: 'Safety',               color: '#d97706', desc: 'Safety score (inverted toxicity / role adherence)' },
-    { key: 'instruction_following', label: 'Instruction Following',color: '#9333ea', desc: 'GEval instruction following / knowledge retention' },
+    { key: 'accuracy',        label: 'Math',      color: '#4f46e5', desc: 'Deterministic exact-match score on math questions' },
+    { key: 'relevance_score', label: 'Reasoning', color: '#0891b2', desc: 'Step-wise logic check (Gemini rubric) on reasoning questions' },
+    { key: 'factuality_score', label: 'Knowledge', color: '#16a34a', desc: 'Factuality score (Gemini rubric) on knowledge questions' },
+    { key: 'toxicity_score',  label: 'Security',  color: '#d97706', desc: 'Security knowledge score (Gemini rubric) on cybersecurity questions' },
   ];
 
   const [activeMetric, setActiveMetric] = useState('all');
@@ -221,9 +211,8 @@ const ServiceCard = ({ service }) => {
 
   const showProgress = isLoading || progressSteps.length > 0;
 
-  // ── Count completed steps for summary ──────────────────────────────────────
   const doneCount  = progressSteps.filter(s => s.status === 'done').length;
-  const totalSteps = progressSteps.filter(s => s.status !== 'section').length;
+  const totalSteps = progressSteps.filter(s => !['qa_pair'].includes(s.status)).length;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col transition-shadow hover:shadow-md">
@@ -246,17 +235,19 @@ const ServiceCard = ({ service }) => {
               }`}>
                 {service.data_sensitivity?.toUpperCase() || '—'}
               </span>
-              {driftDetected && (
-                <div className="flex flex-col items-start gap-1">
-                  <span className="bg-red-500 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm animate-pulse whitespace-nowrap">
-                    {latestEval?.drift_type ? `⚠️ ${latestEval.drift_type.toUpperCase()}` : 'DRIFT DETECTED'}
-                  </span>
-                  {latestEval?.drift_reason && (
-                    <span className="text-[10px] text-red-600 font-medium italic max-w-[200px] leading-tight">
-                      {latestEval.drift_reason}
-                    </span>
-                  )}
-                </div>
+              {serviceStatus && (
+                <span className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  serviceStatus === 'drift' ? 'bg-red-50 text-red-600 border-red-200'
+                  : serviceStatus === 'warn' ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                  : 'bg-green-50 text-green-700 border-green-200'
+                }`}>
+                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                    serviceStatus === 'drift' ? 'bg-red-500 animate-pulse'
+                    : serviceStatus === 'warn' ? 'bg-yellow-400 animate-pulse'
+                    : 'bg-green-500'
+                  }`} />
+                  {serviceStatus.charAt(0).toUpperCase() + serviceStatus.slice(1)}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
@@ -314,37 +305,7 @@ const ServiceCard = ({ service }) => {
                 {doneCount} / {totalSteps} steps
               </span>
             )}
-            {!isLoading && (
-              <span className="text-[10px] text-gray-400">
-                Runs: <strong className="text-gray-600">Single-Turn + Multi-Turn</strong>
-              </span>
-            )}
-        </div>
-      </div>
-    </div>
-
-      {/* ── Dataset Type Tabs ── */}
-      <div className="px-6 pt-4 pb-0 border-b border-gray-100">
-        <div className="flex gap-2 flex-wrap">
-          {DATASET_TYPES.map(dt => {
-            const isActive = selectedDataset === dt.key;
-            return (
-              <button
-                key={dt.key}
-                onClick={() => handleDatasetChange(dt.key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${
-                  isActive
-                    ? 'border-indigo-500 text-indigo-700 bg-indigo-50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {dt.label}
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${dt.tagColor}`}>
-                  {dt.tag}
-                </span>
-              </button>
-            );
-          })}
+          </div>
         </div>
       </div>
 
@@ -388,21 +349,21 @@ const ServiceCard = ({ service }) => {
                 : 'bg-gray-50 border-gray-100 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/40'
             }`}
           >
-            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">Latency</p>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">Runtime</p>
             <p className="text-md font-medium text-gray-700 mt-0.5">{latency}</p>
           </button>
         </div>
       </div>
 
-      {/* ── Chart + Right Panel ── */}
+      {/* ── Chart + Sample Details (always side by side) ── */}
       <div className="px-6 pb-6 flex gap-6" style={{ minHeight: '320px' }}>
 
         {/* Left: Chart */}
-        <div style={{ flex: '0 0 55%', minWidth: 0 }} className="flex flex-col">
+        <div style={{ flex: '0 0 52%', minWidth: 0 }} className="flex flex-col">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-semibold text-gray-700">
               {activeMetric === 'all' ? 'All Metrics Over Time'
-                : activeMetric === 'latency_ms' ? 'Latency Over Time'
+                : activeMetric === 'latency_ms' ? 'Runtime Over Time'
                 : `${METRICS.find(m => m.key === activeMetric)?.label} Over Time`}
             </h4>
             {activeMetric !== 'all' && (
@@ -438,7 +399,7 @@ const ServiceCard = ({ service }) => {
                     <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} iconType="line" iconSize={12} />
                   )}
                   {activeMetric === 'latency_ms' ? (
-                    <Line type="monotone" dataKey="latency_ms" name="Latency (ms)" stroke="#f59e0b"
+                    <Line type="monotone" dataKey="latency_ms" name="Runtime" stroke="#f59e0b"
                       strokeWidth={4} dot={{ r: 4, fill: '#f59e0b', strokeWidth: 2, stroke: '#ffffff' }}
                       activeDot={{ r: 5 }} animationDuration={1000} connectNulls />
                   ) : (
@@ -471,164 +432,169 @@ const ServiceCard = ({ service }) => {
           )}
         </div>
 
-        {/* Right: Progress or Sample Details */}
-        <div style={{ flex: '0 0 45%', minWidth: 0 }} className="border-l border-gray-100 pl-6 flex flex-col overflow-hidden">
-
-          {showProgress ? (
-            /* ── Progress Panel ── */
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  <h4 className="text-sm font-semibold text-gray-700">Evaluation Progress</h4>
-                </div>
-                {evalFinished && (
-                  <button
-                    onClick={() => setProgressSteps([])}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                  >
-                    Clear
-                  </button>
-                )}
+        {/* Right: Sample Details — always visible */}
+        <div style={{ flex: '0 0 48%', minWidth: 0 }} className="border-l border-gray-100 pl-6 flex flex-col overflow-hidden">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <h4 className="text-sm font-semibold text-gray-700">Sample Details</h4>
+            {Object.keys(categoryScores).length > 0 && (
+              <div className="ml-auto flex flex-wrap gap-1">
+                {Object.entries(categoryScores).map(([cat, pct]) => (
+                  <span key={cat} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
+                    pct >= 80 ? 'bg-green-50 text-green-700 border-green-200'
+                    : pct >= 55 ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                    : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>{cat}: {pct.toFixed(0)}%</span>
+                ))}
               </div>
+            )}
+          </div>
 
-              <div className="flex-1 overflow-y-auto pr-1 space-y-0.5" style={{ maxHeight: 290 }}>
-                {progressSteps.map((step, idx) => {
-                  // Section header
-                  if (step.status === 'section') {
-                    const sc = SECTION_COLORS[step.section] || 'text-gray-600 bg-gray-50 border-gray-200';
-                    return (
-                      <div key={`sec-${idx}`} className={`flex items-center gap-2 px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-wider mt-2 mb-1 ${sc}`}>
-                        {SECTION_LABELS[step.section] || step.label}
-                      </div>
-                    );
-                  }
-
-                  const isRunning = step.status === 'running';
-                  return (
-                    <div
-                      key={step.step}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${
-                        isRunning ? 'bg-indigo-50' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <StepIcon status={step.status} />
-                      <span className={`text-xs flex-1 leading-tight ${
-                        isRunning ? 'text-indigo-700 font-medium'
-                        : step.status === 'done' ? 'text-gray-700'
-                        : step.status === 'error' ? 'text-red-500'
-                        : step.status === 'stopped' ? 'text-orange-500 font-medium'
-                        : 'text-gray-500'
-                      }`}>
-                        {step.label}
+          {sampleDetails.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 py-8 px-4">
+              <svg className="w-8 h-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-sm font-medium text-gray-400">No sample data yet</p>
+              <p className="text-xs text-gray-400 mt-1">Run evaluation to see Q / Expected / Actual</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1" style={{ maxHeight: 260 }}>
+              {sampleDetails.map((s, i) => {
+                const scorePct = s.score_pct ?? (s.si != null ? s.si * 100 : null);
+                const methodColor = s.method?.startsWith('exact') ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
+                return (
+                  <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
+                    <div className="px-3 py-1.5 bg-indigo-50 border-b border-indigo-100 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">
+                        {s.category ?? 'Q'} #{i + 1}
                       </span>
-                      {step.score != null && <ScorePill score={step.score} />}
-                      {step.duration_ms != null && (
-                        <span className="text-[10px] text-gray-400 font-mono shrink-0 ml-1">
-                          {fmtDuration(step.duration_ms)}
-                        </span>
+                      {s.method && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${methodColor}`}>{s.method}</span>
+                      )}
+                      {scorePct != null && (
+                        <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                          scorePct >= 80 ? 'bg-green-100 text-green-700'
+                          : scorePct >= 55 ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-red-100 text-red-700'
+                        }`}>{scorePct.toFixed(0)}%</span>
                       )}
                     </div>
-                  );
-                })}
-
-                {/* Loading indicator when stream just started */}
-                {isLoading && progressSteps.length === 0 && (
-                  <div className="flex items-center gap-2 px-2 py-2 text-xs text-gray-400 animate-pulse">
-                    <svg className="w-4 h-4 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Connecting to evaluation engine…
-                  </div>
-                )}
-
-                <div ref={progressEndRef} />
-              </div>
-
-              {evalFinished && (
-                <div className={`mt-2 px-2 py-1.5 rounded text-[11px] font-semibold text-center ${
-                  progressSteps.some(s => s.status === 'stopped')
-                    ? 'bg-orange-50 text-orange-600'
-                    : progressSteps.some(s => s.status === 'error' && s.step !== 'conn_error')
-                    ? 'bg-red-50 text-red-600'
-                    : 'bg-green-50 text-green-600'
-                }`}>
-                  {progressSteps.some(s => s.status === 'stopped')
-                    ? '⏹ Evaluation stopped'
-                    : progressSteps.some(s => s.status === 'error' && s.step === 'complete')
-                    ? '✓ Complete'
-                    : progressSteps.some(s => s.status === 'error')
-                    ? '⚠ Completed with errors'
-                    : '✓ All evaluations complete'}
-                </div>
-              )}
-            </>
-          ) : (
-            /* ── Sample Details Panel ── */
-            <>
-              <div className="flex items-center gap-2 mb-3">
-                <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <h4 className="text-sm font-semibold text-gray-700">
-                  Sample Details
-                  <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                    DATASET_TYPES.find(d => d.key === selectedDataset)?.tagColor || 'bg-gray-100 text-gray-600'
-                  }`}>
-                    {DATASET_TYPES.find(d => d.key === selectedDataset)?.label}
-                  </span>
-                </h4>
-              </div>
-
-              {sampleDetails.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 py-8 px-4">
-                  <svg className="w-8 h-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  <p className="text-sm font-medium text-gray-400">No sample data yet</p>
-                  <p className="text-xs text-gray-400 mt-1">Run evaluation to see input / output details</p>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto space-y-3 pr-1" style={{ maxHeight: 290 }}>
-                  {sampleDetails.map((s, i) => (
-                    <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 overflow-hidden">
-                      <div className="px-3 py-1.5 bg-indigo-50 border-b border-indigo-100 flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Sample {i + 1}</span>
-                        {s.accuracy != null && (
-                          <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                            s.accuracy >= 80 ? 'bg-green-100 text-green-700'
-                            : s.accuracy >= 55 ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
-                          }`}>
-                            Accuracy: {s.accuracy.toFixed(0)}%
-                          </span>
-                        )}
+                    <div className="px-3 py-2 space-y-1.5">
+                      <div>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Question</span>
+                        <p className="text-xs text-gray-700 mt-0.5 leading-relaxed">{s.input || '—'}</p>
                       </div>
-                      <div className="px-3 py-2 space-y-1.5">
-                        <div>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Input</span>
-                          <p className="text-xs text-gray-700 mt-0.5 leading-relaxed">{s.input || '—'}</p>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-500">Expected Output</span>
-                          <p className="text-xs text-emerald-700 mt-0.5 font-medium">{s.expected_output || '—'}</p>
-                        </div>
-                        <div>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-400">Actual Output</span>
-                          <p className="text-xs text-indigo-700 mt-0.5">{s.actual_output || '(not yet evaluated)'}</p>
-                        </div>
+                      <div>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-500">Expected</span>
+                        <p className="text-xs text-emerald-700 mt-0.5 font-medium">{s.expected_output || '—'}</p>
                       </div>
+                      <div>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-400">Actual</span>
+                        <p className="text-xs text-indigo-700 mt-0.5">{s.actual_output || '(none)'}</p>
+                      </div>
+                      {s.explanation && (
+                        <div className="bg-white rounded border border-gray-200 px-2 py-1">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Gemini Note</span>
+                          <p className="text-[11px] text-gray-500 italic mt-0.5">{s.explanation}</p>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
+
+      {/* ── Progress Panel (collapsible, below chart) ── */}
+      {showProgress && (
+        <div className="px-6 pb-6 border-t border-gray-100 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <h4 className="text-sm font-semibold text-gray-700">Evaluation Progress</h4>
+              {isLoading && totalSteps > 0 && (
+                <span className="text-[10px] text-gray-400">{doneCount}/{totalSteps} steps</span>
+              )}
+            </div>
+            {evalFinished && (
+              <button onClick={() => setProgressSteps([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+            )}
+          </div>
+
+          <div className="overflow-y-auto space-y-0.5" style={{ maxHeight: 200 }}>
+            {progressSteps.map((step, idx) => {
+              if (step.status === 'qa_pair') {
+                return (
+                  <div key={`qa-${idx}`} className="mx-1 my-1 rounded-lg border border-indigo-100 bg-indigo-50 overflow-hidden">
+                    <div className="px-2 py-1 bg-indigo-100 flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider flex-1">{step.label}</span>
+                      {step.model && <span className="text-[9px] bg-white text-indigo-500 border border-indigo-200 rounded px-1 font-mono">{step.model}</span>}
+                    </div>
+                    <div className="px-2 py-1.5 space-y-1">
+                      <div>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Q</span>
+                        <p className="text-[11px] text-gray-700 mt-0.5 leading-snug">{step.question}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-400">A</span>
+                        <p className="text-[11px] text-indigo-700 mt-0.5 leading-snug">{step.answer}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              const isRunning = step.status === 'running';
+              const isJudgeStep = /judge/i.test(step.step);
+              return (
+                <div key={step.step} className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${isRunning ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                  <StepIcon status={step.status} />
+                  <span className={`text-xs flex-1 leading-tight ${
+                    isRunning ? 'text-indigo-700 font-medium'
+                    : step.status === 'done' ? 'text-gray-700'
+                    : step.status === 'error' ? 'text-red-500'
+                    : step.status === 'stopped' ? 'text-orange-500 font-medium'
+                    : 'text-gray-500'
+                  }`}>{step.label}</span>
+                  {isJudgeStep && (step.status === 'running' || step.status === 'done') && (
+                    <span className="text-[9px] bg-green-50 text-green-600 border border-green-200 rounded px-1 shrink-0">gemini</span>
+                  )}
+                  {step.score != null && <ScorePill score={step.score} />}
+                  {step.duration_ms != null && <span className="text-[10px] text-gray-400 font-mono shrink-0 ml-1">{fmtDuration(step.duration_ms)}</span>}
+                </div>
+              );
+            })}
+            {isLoading && progressSteps.length === 0 && (
+              <div className="flex items-center gap-2 px-2 py-2 text-xs text-gray-400 animate-pulse">
+                <svg className="w-4 h-4 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Connecting to evaluation engine…
+              </div>
+            )}
+            <div ref={progressEndRef} />
+          </div>
+
+          {evalFinished && (
+            <div className={`mt-2 px-2 py-1.5 rounded text-[11px] font-semibold text-center ${
+              progressSteps.some(s => s.status === 'stopped') ? 'bg-orange-50 text-orange-600'
+              : progressSteps.some(s => s.status === 'error' && s.step !== 'conn_error') ? 'bg-red-50 text-red-600'
+              : 'bg-green-50 text-green-600'
+            }`}>
+              {progressSteps.some(s => s.status === 'stopped') ? 'Evaluation stopped'
+               : progressSteps.some(s => s.status === 'error') ? 'Completed with errors'
+               : 'Evaluation complete'}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -34,7 +34,7 @@ def run_all_evaluations():
     try:
         services = db.query(Service).all()
         for service in services:
-            run_evaluation(service.id, db, dataset_type="single_turn")
+            run_evaluation(service.id, db)
     finally:
         db.close()
 
