@@ -8,6 +8,7 @@ const CAT = {
   incident:    { pill: "bg-amber-900/50 text-amber-300 border-amber-700/60", dot: "bg-amber-400"  },
   maintenance: { pill: "bg-purple-900/50 text-purple-300 border-purple-700/60", dot: "bg-purple-400" },
   governance:  { pill: "bg-cyan-900/50 text-cyan-300 border-cyan-700/60",   dot: "bg-cyan-400"   },
+  evaluation:  { pill: "bg-violet-900/50 text-violet-300 border-violet-700/60", dot: "bg-violet-400" },
 };
 const DEFAULT_CAT = { pill: "bg-gray-800 text-gray-300 border-gray-600", dot: "bg-gray-400" };
 

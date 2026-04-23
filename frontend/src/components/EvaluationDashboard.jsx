@@ -102,7 +102,8 @@ const ServiceCard = ({ service }) => {
     setEvalFinished(false);
     setProgressSteps([]);
 
-    const es = new EventSource(`${BASE_URL}/evaluations/run-stream/${service.id}`);
+    const token = localStorage.getItem("token") || "";
+    const es = new EventSource(`${BASE_URL}/evaluations/run-stream/${service.id}?token=${encodeURIComponent(token)}`);
     eventSourceRef.current = es;
 
     es.onmessage = (event) => {

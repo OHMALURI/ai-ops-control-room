@@ -13,12 +13,25 @@ try:
     from services.evaluator import (
         run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
+    from auth import SECRET_KEY, ALGORITHM
 except ImportError:
     from ..database import get_db, SessionLocal
     from ..models import Service, Evaluation
     from ..services.evaluator import (
         run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
+    from ..auth import SECRET_KEY, ALGORITHM
+
+def _user_id_from_token(token: Optional[str]) -> Optional[int]:
+    if not token:
+        return None
+    try:
+        from jose import jwt, JWTError
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        uid = payload.get("sub")
+        return int(uid) if uid else None
+    except Exception:
+        return None
 
 router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 
@@ -27,8 +40,9 @@ router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 # SSE STREAMING  — streams progress events for the evaluation run
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/run-stream/{service_id}")
-def run_evaluation_stream(service_id: int):
+def run_evaluation_stream(service_id: int, token: Optional[str] = Query(default=None)):
     """SSE endpoint — streams progress events while the evaluation runs."""
+    user_id = _user_id_from_token(token)
     progress_queue: queue_module.Queue = queue_module.Queue()
 
     def run_in_thread():
@@ -39,7 +53,7 @@ def run_evaluation_stream(service_id: int):
             def on_progress(event):
                 progress_queue.put(event)
 
-            run_evaluation(service_id, db, on_progress=on_progress)
+            run_evaluation(service_id, db, on_progress=on_progress, user_id=user_id)
             progress_queue.put({"step": "complete", "label": "Evaluation complete", "status": "complete"})
 
         except EvaluationStopped:

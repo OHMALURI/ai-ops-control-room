@@ -21,7 +21,7 @@ import concurrent.futures as _cf
 from openai import OpenAI
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from models import Evaluation, Service
+from models import Evaluation, Service, AuditLog
 
 try:
     from eval_questions import EVAL_QUESTIONS
@@ -50,7 +50,8 @@ def _get_stop_flag(service_id: int) -> threading.Event:
 
 def request_stop(service_id: int):
     with _stop_flags_lock:
-        _stop_flags[service_id] = threading.Event()
+        if service_id not in _stop_flags:
+            _stop_flags[service_id] = threading.Event()
         _stop_flags[service_id].set()
 
 
@@ -458,7 +459,7 @@ def _run_with_timeout(fn, *args, timeout=_METRIC_TIMEOUT):
 # ─────────────────────────────────────────────────────────────────────────────
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────────────────────
-def run_evaluation(service_id: int, db: Session, on_progress=None) -> Evaluation:
+def run_evaluation(service_id: int, db: Session, on_progress=None, user_id: int = None) -> Evaluation:
     """
     Run the reference-based evaluation for a service.
 
@@ -469,8 +470,6 @@ def run_evaluation(service_id: int, db: Session, on_progress=None) -> Evaluation
          others -> single Gemini batch call with all 5 Q/expected/actual pairs.
       4. Aggregate Si scores -> DB metrics + quality score.
     """
-    import random
-
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
         raise ValueError(f"Service {service_id} not found")
@@ -478,6 +477,29 @@ def run_evaluation(service_id: int, db: Session, on_progress=None) -> Evaluation
     _reset_stop_flag(service_id)
     stop_flag = _get_stop_flag(service_id)
     t_start   = time.time()
+
+    try:
+        return _run_evaluation_body(
+            service, service_id, db, stop_flag, t_start, on_progress, user_id
+        )
+    except EvaluationStopped:
+        from datetime import datetime as _dt
+        db.add(AuditLog(
+            user_id=user_id,
+            action="evaluation.stopped",
+            resource=f"services/{service_id}",
+            details=(
+                f"Service: {service.name} | Owner: {service.owner} | "
+                f"Model: {service.model_name} | Stopped before completion"
+            ),
+            timestamp=_dt.utcnow(),
+        ))
+        db.commit()
+        raise
+
+
+def _run_evaluation_body(service, service_id, db, stop_flag, t_start, on_progress, user_id):
+    import random
 
     # Sample 5 random questions per category
     categories = ["reasoning", "math", "knowledge", "security"]
@@ -651,4 +673,27 @@ def run_evaluation(service_id: int, db: Session, on_progress=None) -> Evaluation
     db.add(evaluation)
     db.commit()
     db.refresh(evaluation)
+
+    # ── Audit log ─────────────────────────────────────────────────────────────
+    from datetime import datetime as _dt
+    if quality_score < 50 or drift_triggered:
+        eval_status = "Drift"
+    elif quality_score < 70:
+        eval_status = "Warn"
+    else:
+        eval_status = "Good"
+
+    audit_details = (
+        f"Service: {service.name} | Owner: {service.owner} | Model: {service.model_name} | "
+        f"Runtime: {latency_ms}ms | Quality: {quality_score:.1f}% | Status: {eval_status}"
+    )
+    db.add(AuditLog(
+        user_id=user_id,
+        action="evaluation.completed",
+        resource=f"evaluations/{evaluation.id}",
+        details=audit_details,
+        timestamp=_dt.utcnow(),
+    ))
+    db.commit()
+
     return evaluation
