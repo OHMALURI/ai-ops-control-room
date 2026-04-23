@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes, Navigate, Outlet, useNavigate } from 'rea
 import { useEffect } from 'react';
 import api from './api';
 import NavBar from './components/NavBar';
+import { EvaluationProvider } from './contexts/EvaluationContext';
 import Dashboard from './pages/Dashboard';
 import ServiceRegistry from './pages/ServiceRegistry';
 import Operations from './pages/Operations';
@@ -45,6 +46,7 @@ function ProtectedLayout() {
 export default function App() {
   return (
     <BrowserRouter>
+      <EvaluationProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/reset-password" element={<ResetPassword />} />
@@ -61,6 +63,7 @@ export default function App() {
           <Route path="/perf-logs" element={<PerformanceLogs />} />
         </Route>
       </Routes>
+      </EvaluationProvider>
     </BrowserRouter>
   );
 }

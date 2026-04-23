@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import api from '../api.js';
-
-const BASE_URL = 'http://localhost:8000/api';
+import { useEvaluation } from '../contexts/EvaluationContext.jsx';
 
 // ── Progress step helpers ─────────────────────────────────────────────────────
 function fmtDuration(ms) {
@@ -61,16 +60,13 @@ function ScorePill({ score }) {
 const ServiceCard = ({ service }) => {
   const effectiveRole = localStorage.getItem("effectiveRole") || localStorage.getItem("role") || "user";
   const canRunEval    = effectiveRole === "admin" || effectiveRole === "maintainer";
-  const [latestEval, setLatestEval]         = useState(null);
-  const [allEvals, setAllEvals]             = useState([]);
-  const [isLoading, setIsLoading]           = useState(false);
+  const [latestEval, setLatestEval]               = useState(null);
+  const [allEvals, setAllEvals]                   = useState([]);
   const [isFetchingInitial, setIsFetchingInitial] = useState(true);
-  const [progressSteps, setProgressSteps]   = useState([]);
-  const [evalFinished, setEvalFinished]     = useState(false);
 
-  const eventSourceRef  = useRef(null);
-  const progressEndRef  = useRef(null);
-  const terminalRef     = useRef(false); // true once complete/error/stopped received
+  const progressEndRef = useRef(null);
+  const { startEval, stopEval, clearProgress, getState } = useEvaluation();
+  const { steps: progressSteps, isLoading, finished: evalFinished } = getState(service.id);
 
   const fetchEvaluations = async () => {
     try {
@@ -96,70 +92,10 @@ const ServiceCard = ({ service }) => {
   }, [service.id]);
 
   const handleRunEvaluation = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-    setIsLoading(true);
-    setEvalFinished(false);
-    setProgressSteps([]);
-    terminalRef.current = false;
-
-    const token = localStorage.getItem("token") || "";
-    const es = new EventSource(`${BASE_URL}/evaluations/run-stream/${service.id}?token=${encodeURIComponent(token)}`);
-    eventSourceRef.current = es;
-
-    es.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      // qa_pair events always append (display-only, never updated)
-      if (data.status === 'qa_pair') {
-        setProgressSteps(prev => [...prev, data]);
-        return;
-      }
-
-      setProgressSteps(prev => {
-        const idx = prev.findIndex(s => s.step === data.step);
-        if (idx >= 0) {
-          const updated = [...prev];
-          updated[idx] = data;
-          return updated;
-        }
-        return [...prev, data];
-      });
-
-      if (['complete', 'error', 'stopped'].includes(data.status)) {
-        terminalRef.current = true;
-        es.close();
-        eventSourceRef.current = null;
-        setIsLoading(false);
-        setEvalFinished(true);
-        fetchEvaluations();
-      }
-    };
-
-    es.onerror = () => {
-      // Ignore onerror if we already received a terminal event — the server
-      // closes the SSE connection after sending 'complete', which the browser
-      // reports as an error even on a clean finish.
-      if (terminalRef.current) return;
-      es.close();
-      eventSourceRef.current = null;
-      setIsLoading(false);
-      setEvalFinished(true);
-      setProgressSteps(prev => [
-        ...prev,
-        { step: 'conn_error', label: 'Connection lost', status: 'error' },
-      ]);
-    };
+    startEval(service.id, fetchEvaluations);
   };
 
-  const handleStop = async () => {
-    try {
-      await api.post(`/evaluations/stop/${service.id}`);
-    } catch (e) {
-      console.error('Stop request failed', e);
-    }
-  };
+  const handleStop = () => stopEval(service.id);
 
   // Auto-scroll progress list
   useEffect(() => {
@@ -546,7 +482,7 @@ const ServiceCard = ({ service }) => {
               )}
             </div>
             {evalFinished && (
-              <button onClick={() => setProgressSteps([])} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
+              <button onClick={() => clearProgress(service.id)} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>
             )}
           </div>
 
