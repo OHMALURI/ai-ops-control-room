@@ -68,8 +68,9 @@ const ServiceCard = ({ service }) => {
   const [progressSteps, setProgressSteps]   = useState([]);
   const [evalFinished, setEvalFinished]     = useState(false);
 
-  const eventSourceRef = useRef(null);
-  const progressEndRef = useRef(null);
+  const eventSourceRef  = useRef(null);
+  const progressEndRef  = useRef(null);
+  const terminalRef     = useRef(false); // true once complete/error/stopped received
 
   const fetchEvaluations = async () => {
     try {
@@ -101,6 +102,7 @@ const ServiceCard = ({ service }) => {
     setIsLoading(true);
     setEvalFinished(false);
     setProgressSteps([]);
+    terminalRef.current = false;
 
     const token = localStorage.getItem("token") || "";
     const es = new EventSource(`${BASE_URL}/evaluations/run-stream/${service.id}?token=${encodeURIComponent(token)}`);
@@ -126,6 +128,7 @@ const ServiceCard = ({ service }) => {
       });
 
       if (['complete', 'error', 'stopped'].includes(data.status)) {
+        terminalRef.current = true;
         es.close();
         eventSourceRef.current = null;
         setIsLoading(false);
@@ -135,6 +138,10 @@ const ServiceCard = ({ service }) => {
     };
 
     es.onerror = () => {
+      // Ignore onerror if we already received a terminal event — the server
+      // closes the SSE connection after sending 'complete', which the browser
+      // reports as an error even on a clean finish.
+      if (terminalRef.current) return;
       es.close();
       eventSourceRef.current = null;
       setIsLoading(false);
@@ -161,7 +168,7 @@ const ServiceCard = ({ service }) => {
     }
   }, [progressSteps]);
 
-  const latency      = latestEval?.latency_ms ? `${latestEval.latency_ms}ms` : 'No data';
+  const latency      = latestEval?.latency_ms ? `${(latestEval.latency_ms / 1000).toFixed(1)}s` : 'No data';
   const driftDetected = latestEval?.drift_triggered === true;
 
   const serviceStatus = (() => {
@@ -190,13 +197,26 @@ const ServiceCard = ({ service }) => {
     : 'bg-blue-100 text-blue-800 border-blue-200';
 
   const METRICS = [
-    { key: 'accuracy',        label: 'Math',      color: '#4f46e5', desc: 'Deterministic exact-match score on math questions' },
-    { key: 'relevance_score', label: 'Reasoning', color: '#0891b2', desc: 'Step-wise logic check (Gemini rubric) on reasoning questions' },
-    { key: 'factuality_score', label: 'Knowledge', color: '#16a34a', desc: 'Factuality score (Gemini rubric) on knowledge questions' },
-    { key: 'toxicity_score',  label: 'Security',  color: '#d97706', desc: 'Security knowledge score (Gemini rubric) on cybersecurity questions' },
+    { key: 'quality_score',   label: 'Avg Quality Score', color: '#7c3aed', desc: 'Average quality score across all categories' },
+    { key: 'accuracy',        label: 'Math',         color: '#4f46e5', desc: 'Deterministic exact-match score on math questions' },
+    { key: 'relevance_score', label: 'Reasoning',    color: '#0891b2', desc: 'Step-wise logic check (Gemini rubric) on reasoning questions' },
+    { key: 'factuality_score', label: 'Knowledge',   color: '#16a34a', desc: 'Factuality score (Gemini rubric) on knowledge questions' },
+    { key: 'toxicity_score',  label: 'Security',     color: '#d97706', desc: 'Security knowledge score (Gemini rubric) on cybersecurity questions' },
   ];
 
   const [activeMetric, setActiveMetric] = useState('all');
+
+  const METRIC_TO_CATEGORY = {
+    accuracy:         'math',
+    relevance_score:  'reasoning',
+    factuality_score: 'knowledge',
+    toxicity_score:   'security',
+    // quality_score and latency_ms have no category → show all
+  };
+  const activeCat = METRIC_TO_CATEGORY[activeMetric] ?? null;
+  const visibleSamples = activeCat
+    ? sampleDetails.filter(s => s.category === activeCat)
+    : sampleDetails;
 
   const chartData = [...allEvals].reverse().map(e => {
     const dateObj = new Date(e.timestamp);
@@ -399,7 +419,7 @@ const ServiceCard = ({ service }) => {
                     labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
                     formatter={(value, name) =>
                       activeMetric === 'latency_ms'
-                        ? [`${value != null ? value : '—'}ms`, name]
+                        ? [`${value != null ? (value / 1000).toFixed(1) : '—'}s`, name]
                         : [`${value != null ? value.toFixed(1) : '—'}%`, name]
                     }
                   />
@@ -447,20 +467,14 @@ const ServiceCard = ({ service }) => {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <h4 className="text-sm font-semibold text-gray-700">Sample Details</h4>
-            {Object.keys(categoryScores).length > 0 && (
-              <div className="ml-auto flex flex-wrap gap-1">
-                {Object.entries(categoryScores).map(([cat, pct]) => (
-                  <span key={cat} className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${
-                    pct >= 80 ? 'bg-green-50 text-green-700 border-green-200'
-                    : pct >= 55 ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                    : 'bg-red-50 text-red-700 border-red-200'
-                  }`}>{cat}: {pct.toFixed(0)}%</span>
-                ))}
-              </div>
+            {activeCat && (
+              <span className="ml-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 uppercase tracking-wide">
+                {activeCat}
+              </span>
             )}
           </div>
 
-          {sampleDetails.length === 0 ? (
+          {visibleSamples.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50 py-8 px-4">
               <svg className="w-8 h-8 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -470,7 +484,7 @@ const ServiceCard = ({ service }) => {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto space-y-2 pr-1" style={{ maxHeight: 260 }}>
-              {sampleDetails.map((s, i) => {
+              {visibleSamples.map((s, i) => {
                 const scorePct = s.score_pct ?? (s.si != null ? s.si * 100 : null);
                 const methodColor = s.method?.startsWith('exact') ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
                 return (
@@ -593,10 +607,12 @@ const ServiceCard = ({ service }) => {
           {evalFinished && (
             <div className={`mt-2 px-2 py-1.5 rounded text-[11px] font-semibold text-center ${
               progressSteps.some(s => s.status === 'stopped') ? 'bg-orange-50 text-orange-600'
-              : progressSteps.some(s => s.status === 'error' && s.step !== 'conn_error') ? 'bg-red-50 text-red-600'
+              : progressSteps.some(s => s.step === 'conn_error') ? 'bg-red-50 text-red-500'
+              : progressSteps.some(s => s.status === 'error') ? 'bg-red-50 text-red-600'
               : 'bg-green-50 text-green-600'
             }`}>
               {progressSteps.some(s => s.status === 'stopped') ? 'Evaluation stopped'
+               : progressSteps.some(s => s.step === 'conn_error') ? 'Connection lost'
                : progressSteps.some(s => s.status === 'error') ? 'Completed with errors'
                : 'Evaluation complete'}
             </div>

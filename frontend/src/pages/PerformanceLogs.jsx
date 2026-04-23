@@ -247,7 +247,7 @@ export default function PerformanceLogs() {
                             <tr className="hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{new Date(e.timestamp).toLocaleString()}</td>
                               <td className="px-5 py-3 font-semibold text-indigo-700 tabular-nums">{e.quality_score != null ? `${e.quality_score.toFixed(1)}%` : '—'}</td>
-                              <td className="px-5 py-3 text-emerald-700 tabular-nums">{e.latency_ms ? `${e.latency_ms}ms` : '—'}</td>
+                              <td className="px-5 py-3 text-emerald-700 tabular-nums">{e.latency_ms ? `${(e.latency_ms / 1000).toFixed(1)}s` : '—'}</td>
                               <td className="px-5 py-3"><StatusBadge score={e.quality_score} prevScore={prevScore} /></td>
                               <td className="px-5 py-3 text-right">
                                 <button

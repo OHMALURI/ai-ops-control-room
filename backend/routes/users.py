@@ -106,6 +106,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
         "role": user.role,
         "effective_role": effective,
         "username": user.username,
+        "email": user.email,
         "force_password_reset": user.force_password_reset,
     }
 

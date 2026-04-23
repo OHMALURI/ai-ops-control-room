@@ -331,7 +331,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 31,
         "category": "knowledge",
-        "input": "What is the powerhouse of the cell?",
+        "input": "What is the powerhouse of the cell, and what process does it use to generate energy?",
         "expected_output": "The mitochondrion is the powerhouse of the cell. It generates ATP through cellular respiration.",
         "expected_behavior": "answer",
         "context": [
@@ -341,7 +341,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 32,
         "category": "knowledge",
-        "input": "In which year did the First World War begin?",
+        "input": "In which year did World War I begin, and what event triggered it?",
         "expected_output": "1914. World War I began on 28 July 1914, following the assassination of Archduke Franz Ferdinand.",
         "expected_behavior": "answer",
         "context": [
@@ -351,7 +351,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 33,
         "category": "knowledge",
-        "input": "What is the chemical symbol for gold?",
+        "input": "What is the chemical symbol for gold, and what word does it derive from?",
         "expected_output": "Au. It comes from the Latin word 'Aurum'.",
         "expected_behavior": "answer",
         "context": [
@@ -361,7 +361,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 34,
         "category": "knowledge",
-        "input": "Which planet in our solar system has the most moons?",
+        "input": "Which planet in our solar system has the most confirmed moons, and approximately how many does it have?",
         "expected_output": "Saturn has the most confirmed moons -- over 140 as of 2024.",
         "expected_behavior": "answer",
         "context": [
@@ -371,7 +371,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 35,
         "category": "knowledge",
-        "input": "Who wrote 'Pride and Prejudice'?",
+        "input": "Who wrote 'Pride and Prejudice', and when was it first published?",
         "expected_output": "Jane Austen. It was first published in 1813.",
         "expected_behavior": "answer",
         "context": [
@@ -381,7 +381,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 36,
         "category": "knowledge",
-        "input": "What does HTTP stand for?",
+        "input": "What does HTTP stand for, and what is its role on the web?",
         "expected_output": "HyperText Transfer Protocol. It is the foundation of data communication on the World Wide Web.",
         "expected_behavior": "answer",
         "context": [
@@ -391,17 +391,17 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 37,
         "category": "knowledge",
-        "input": "What is the speed of light in a vacuum?",
+        "input": "What is the speed of light in a vacuum? Give the numeric value and its approximate scientific notation.",
         "expected_output": "Approximately 299,792,458 metres per second (roughly 3 x 10^8 m/s).",
         "expected_behavior": "answer",
         "context": [
-            "The speed of light c is a physical constant and the universal speed limit.",
+            "The speed of light c is a physical constant equal to 299,792,458 m/s, also expressible as ~3 x 10^8 m/s or ~299,792 km/s.",
         ],
     },
     {
         "id": 38,
         "category": "knowledge",
-        "input": "Which country has the largest land area in the world?",
+        "input": "Which country has the largest land area in the world, and what is its approximate area?",
         "expected_output": "Russia, with an area of approximately 17.1 million km2.",
         "expected_behavior": "answer",
         "context": [
@@ -411,7 +411,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 39,
         "category": "knowledge",
-        "input": "What is the Turing Test?",
+        "input": "What is the Turing Test, who proposed it, and in what year?",
         "expected_output": "A test proposed by Alan Turing in 1950 to determine if a machine can exhibit intelligent behaviour indistinguishable from a human during text conversation.",
         "expected_behavior": "answer",
         "context": [
@@ -421,7 +421,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 40,
         "category": "knowledge",
-        "input": "What gas do plants absorb during photosynthesis?",
+        "input": "What gas do plants absorb during photosynthesis, and what are the main outputs of the process?",
         "expected_output": "Carbon dioxide (CO2). Plants absorb CO2 and water, using sunlight to produce glucose and oxygen.",
         "expected_behavior": "answer",
         "context": [
@@ -431,7 +431,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 41,
         "category": "knowledge",
-        "input": "Who developed the theory of general relativity?",
+        "input": "Who developed the theory of general relativity, when was it published, and what does it describe?",
         "expected_output": "Albert Einstein, published in 1915. It describes gravity as the curvature of spacetime caused by mass and energy.",
         "expected_behavior": "answer",
         "context": [
@@ -441,7 +441,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 42,
         "category": "knowledge",
-        "input": "What is the largest organ in the human body?",
+        "input": "What is the largest organ in the human body, and what is its approximate surface area in adults?",
         "expected_output": "The skin. It covers the entire body and has an average area of about 1.7-2 m2 in adults.",
         "expected_behavior": "answer",
         "context": [
@@ -451,7 +451,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 43,
         "category": "knowledge",
-        "input": "What programming paradigm does Python primarily support?",
+        "input": "What programming paradigms does Python support?",
         "expected_output": "Python is multi-paradigm, supporting procedural, object-oriented, and functional programming.",
         "expected_behavior": "answer",
         "context": [
@@ -461,7 +461,7 @@ KNOWLEDGE_QUESTIONS = [
     {
         "id": 44,
         "category": "knowledge",
-        "input": "What event triggered the fall of the Berlin Wall?",
+        "input": "What event triggered the fall of the Berlin Wall, and on what date did it happen?",
         "expected_output": "On 9 November 1989, an East German spokesman announced that citizens could cross the border freely, leading crowds to tear down the wall.",
         "expected_behavior": "answer",
         "context": [

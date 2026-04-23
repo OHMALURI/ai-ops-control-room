@@ -60,6 +60,24 @@ def run_evaluation_stream(service_id: int, token: Optional[str] = Query(default=
             progress_queue.put({"step": "stopped", "label": "Evaluation stopped by user", "status": "stopped"})
         except Exception as e:
             progress_queue.put({"step": "error", "label": str(e), "status": "error"})
+            try:
+                from datetime import datetime as _dt
+                try:
+                    from models import AuditLog, Service as _Service
+                except ImportError:
+                    from ..models import AuditLog, Service as _Service
+                svc = db.query(_Service).filter(_Service.id == service_id).first()
+                svc_name = svc.name if svc else f"service/{service_id}"
+                db.add(AuditLog(
+                    user_id=user_id,
+                    action="evaluation.error",
+                    resource=f"services/{service_id}",
+                    details=f"Service: {svc_name} | Error: {str(e)[:300]}",
+                    timestamp=_dt.utcnow(),
+                ))
+                db.commit()
+            except Exception:
+                pass
         finally:
             db.close()
 
@@ -74,7 +92,29 @@ def run_evaluation_stream(service_id: int, token: Optional[str] = Query(default=
                 if event.get("status") in ("complete", "error", "stopped"):
                     break
             except queue_module.Empty:
-                yield 'data: {"step":"timeout","label":"Evaluation timed out","status":"error"}\n\n'
+                yield 'data: {"step":"timeout","label":"Evaluation timed out (600s)","status":"error"}\n\n'
+                try:
+                    from datetime import datetime as _dt
+                    _tdb = SessionLocal()
+                    try:
+                        from models import AuditLog, Service as _Service
+                    except ImportError:
+                        from ..models import AuditLog, Service as _Service
+                    svc = _tdb.query(_Service).filter(_Service.id == service_id).first()
+                    svc_name = svc.name if svc else f"service/{service_id}"
+                    _tdb.add(AuditLog(
+                        user_id=user_id,
+                        action="evaluation.timeout",
+                        resource=f"services/{service_id}",
+                        details=f"Service: {svc_name} | Evaluation timed out after 600s",
+                        timestamp=_dt.utcnow(),
+                    ))
+                    _tdb.commit()
+                except Exception:
+                    pass
+                finally:
+                    try: _tdb.close()
+                    except Exception: pass
                 break
 
     return StreamingResponse(

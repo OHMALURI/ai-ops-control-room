@@ -3,14 +3,14 @@ import api from "../api.js";
 
 /* ── action category → colour tokens ─────────────────────────────────── */
 const CAT = {
-  auth:        { pill: "bg-blue-900/50 text-blue-300 border-blue-700/60",   dot: "bg-blue-400"   },
-  service:     { pill: "bg-emerald-900/50 text-emerald-300 border-emerald-700/60", dot: "bg-emerald-400" },
-  incident:    { pill: "bg-amber-900/50 text-amber-300 border-amber-700/60", dot: "bg-amber-400"  },
-  maintenance: { pill: "bg-purple-900/50 text-purple-300 border-purple-700/60", dot: "bg-purple-400" },
-  governance:  { pill: "bg-cyan-900/50 text-cyan-300 border-cyan-700/60",   dot: "bg-cyan-400"   },
-  evaluation:  { pill: "bg-violet-900/50 text-violet-300 border-violet-700/60", dot: "bg-violet-400" },
+  auth:        { pill: "bg-blue-500/20 text-blue-200 border-blue-400/70",     dot: "bg-blue-400"    },
+  service:     { pill: "bg-emerald-500/20 text-emerald-200 border-emerald-400/70", dot: "bg-emerald-400" },
+  incident:    { pill: "bg-amber-500/20 text-amber-200 border-amber-400/70",  dot: "bg-amber-400"   },
+  maintenance: { pill: "bg-purple-500/20 text-purple-200 border-purple-400/70", dot: "bg-purple-400" },
+  governance:  { pill: "bg-cyan-500/20 text-cyan-200 border-cyan-400/70",     dot: "bg-cyan-400"    },
+  evaluation:  { pill: "bg-violet-500/20 text-violet-200 border-violet-400/70", dot: "bg-violet-400" },
 };
-const DEFAULT_CAT = { pill: "bg-gray-800 text-gray-300 border-gray-600", dot: "bg-gray-400" };
+const DEFAULT_CAT = { pill: "bg-gray-700/60 text-gray-200 border-gray-500", dot: "bg-gray-400" };
 
 function catOf(action = "") { return CAT[action.split(".")[0]] ?? DEFAULT_CAT; }
 
@@ -111,10 +111,11 @@ export default function AuditLog() {
   const [expandedId, setExpandedId] = useState(null);
 
   /* filters */
-  const [fAction,  setFAction]  = useState("");
-  const [fUser,    setFUser]    = useState("");
-  const [fFrom,    setFFrom]    = useState("");
-  const [fTo,      setFTo]      = useState("");
+  const [fAction,   setFAction]   = useState("");
+  const [fUser,     setFUser]     = useState("");
+  const [fFrom,     setFFrom]     = useState("");
+  const [fTo,       setFTo]       = useState("");
+  const [fCategory, setFCategory] = useState("");
 
   /* ── load filter options ──────────────────────────────────────────── */
   useEffect(() => {
@@ -183,8 +184,11 @@ export default function AuditLog() {
   }
 
   /* ── derived stats ────────────────────────────────────────────────── */
-  const uniqueUsers = new Set(entries.map(e => e.username).filter(u => u && u !== "system")).size;
-  const systemCount = entries.filter(e => !e.username || e.username === "system").length;
+  const visibleEntries = fCategory
+    ? entries.filter(e => e.action?.startsWith(fCategory + "."))
+    : entries;
+  const uniqueUsers = new Set(visibleEntries.map(e => e.username).filter(u => u && u !== "system")).size;
+  const systemCount = visibleEntries.filter(e => !e.username || e.username === "system").length;
 
   /* ── group actions for dropdown ───────────────────────────────────── */
   const actionGroups = {};
@@ -206,7 +210,7 @@ export default function AuditLog() {
 
       {/* ── stat cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard label="Total Entries"  value={entries.length.toLocaleString()} />
+        <StatCard label="Total Entries"  value={visibleEntries.length.toLocaleString()} sub={fCategory ? `filtered: ${fCategory}` : undefined} />
         <StatCard label="Named Users"    value={uniqueUsers}  sub="system actions excluded" />
         <StatCard label="System Actions" value={systemCount}  sub="no user context" />
       </div>
@@ -287,14 +291,43 @@ export default function AuditLog() {
         </div>
       </div>
 
-      {/* ── category legend ── */}
-      <div className="flex flex-wrap gap-2">
-        {Object.entries(CAT).map(([k, v]) => (
-          <span key={k} className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${v.pill}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${v.dot}`} />
-            {k}
+      {/* ── category filter pills ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-gray-500 font-medium mr-1">Filter by type:</span>
+        <button
+          onClick={() => setFCategory("")}
+          className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
+            fCategory === ""
+              ? "bg-gray-600 text-white border-gray-400"
+              : "bg-gray-800/40 text-gray-500 border-gray-700 hover:border-gray-500 hover:text-gray-300"
+          }`}
+        >
+          all
+        </button>
+        {Object.entries(CAT).map(([k, v]) => {
+          const count = entries.filter(e => e.action?.startsWith(k + ".")).length;
+          const active = fCategory === k;
+          return (
+            <button
+              key={k}
+              onClick={() => setFCategory(active ? "" : k)}
+              className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
+                active
+                  ? v.pill + " ring-2 ring-offset-1 ring-offset-gray-950 ring-current opacity-100"
+                  : v.pill + " opacity-50 hover:opacity-90"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${v.dot}`} />
+              {k}
+              <span className="ml-0.5 opacity-70 font-normal">({count})</span>
+            </button>
+          );
+        })}
+        {fCategory && (
+          <span className="text-xs text-indigo-400 ml-1">
+            Showing <span className="font-semibold">{fCategory}</span> logs only
           </span>
-        ))}
+        )}
       </div>
 
       {/* ── table ── */}
@@ -319,7 +352,7 @@ export default function AuditLog() {
             </svg>
             Loading audit log…
           </div>
-        ) : entries.length === 0 && !error ? (
+        ) : visibleEntries.length === 0 && !error ? (
           <div className="text-center py-24 text-gray-600">
             <svg className="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -339,7 +372,7 @@ export default function AuditLog() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/60">
-                {entries.map(row => {
+                {visibleEntries.map(row => {
                   const c        = catOf(row.action);
                   const expanded = expandedId === row.id;
                   const isSystem = !row.username || row.username === "system";
@@ -400,9 +433,9 @@ export default function AuditLog() {
           </div>
         )}
 
-        {!loading && entries.length > 0 && (
+        {!loading && visibleEntries.length > 0 && (
           <div className="px-5 py-3 border-t border-gray-800 flex items-center justify-between text-xs text-gray-600">
-            <span>{entries.length.toLocaleString()} {entries.length === 1 ? "entry" : "entries"}</span>
+            <span>{visibleEntries.length.toLocaleString()} {visibleEntries.length === 1 ? "entry" : "entries"}{fCategory ? ` · ${fCategory}` : ""}</span>
             <span>Click any row to expand full details</span>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
 const BASE_LINKS = [
@@ -57,7 +58,9 @@ function Initials({ name }) {
 
 export default function NavBar() {
   const navigate = useNavigate();
+  const [showInfo, setShowInfo] = useState(false);
   const username      = localStorage.getItem("username")      || "—";
+  const email         = localStorage.getItem("email")         || "";
   const role          = localStorage.getItem("role")          || "user";
   const effectiveRole = localStorage.getItem("effectiveRole") || role;
   const isTempAdmin   = localStorage.getItem("isTempAdmin") === "true";
@@ -124,15 +127,38 @@ export default function NavBar() {
         </div>
 
         {/* ── User section ── */}
-        <div className="flex items-center gap-2.5 shrink-0 ml-auto pl-2 border-l border-gray-800">
-          <Initials name={username} />
+        <div className="relative flex items-center gap-2.5 shrink-0 ml-auto pl-2 border-l border-gray-800">
+          <button
+            onClick={() => setShowInfo(v => !v)}
+            className="flex items-center gap-2.5 focus:outline-none"
+          >
+            <Initials name={username} />
+            <div className="hidden sm:flex flex-col leading-none gap-1.5 text-left">
+              <span className="text-white text-sm font-semibold">{username}</span>
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${roleColors(effectiveRole, isTempAdmin)}`}>
+                {displayRole}
+              </span>
+            </div>
+          </button>
 
-          <div className="hidden sm:flex flex-col leading-none gap-1.5">
-            <span className="text-white text-sm font-semibold">{username}</span>
-            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${roleColors(effectiveRole, isTempAdmin)}`}>
-              {displayRole}
-            </span>
-          </div>
+          {/* ── Inline info card ── */}
+          {showInfo && (
+            <div className="absolute top-12 right-0 z-50 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-xl p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <Initials name={username} />
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-white text-sm font-semibold truncate">{username}</span>
+                  <span className="text-gray-400 text-xs truncate">{email || "—"}</span>
+                </div>
+              </div>
+              <div className="border-t border-gray-800 pt-2 flex items-center gap-2">
+                <span className="text-gray-500 text-xs">Role</span>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${roleColors(effectiveRole, isTempAdmin)}`}>
+                  {displayRole}
+                </span>
+              </div>
+            </div>
+          )}
 
           <button
             onClick={handleLogout}
