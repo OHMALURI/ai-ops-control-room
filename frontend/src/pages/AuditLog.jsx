@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
+import useCountUp from "../hooks/useCountUp";
 import api from "../api.js";
+import { useTheme } from "../contexts/ThemeContext";
+import Paginator from "../components/Paginator.jsx";
 
 /* ── action category → colour tokens ─────────────────────────────────── */
 const CAT = {
@@ -89,9 +92,11 @@ function FilterDate({ label, value, onChange }) {
 
 /* ── stat card ────────────────────────────────────────────────────────── */
 function StatCard({ label, value, sub }) {
+  const { dark } = useTheme();
+  const count = useCountUp(value);
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
-      <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
+      <p className={`text-2xl font-bold tabular-nums ${dark ? "text-white" : "text-slate-900"}`}>{count.toLocaleString()}</p>
       <p className="text-xs text-gray-400 mt-0.5">{label}</p>
       {sub && <p className="text-xs text-gray-600 mt-0.5">{sub}</p>}
     </div>
@@ -100,6 +105,7 @@ function StatCard({ label, value, sub }) {
 
 /* ═══════════════════════════════════════════════════════════════════════ */
 export default function AuditLog() {
+  const { dark } = useTheme();
   const role = localStorage.getItem("effectiveRole") || localStorage.getItem("role");
 
   const [entries,    setEntries]    = useState([]);
@@ -109,6 +115,12 @@ export default function AuditLog() {
   const [error,      setError]      = useState(null);
   const [downloading,setDownloading]= useState(false);
   const [expandedId, setExpandedId] = useState(null);
+
+  /* pagination */
+  const [page,       setPage]       = useState(1);
+  const [pageSize,   setPageSize]   = useState(25);
+  const [total,      setTotal]      = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   /* filters */
   const [fAction,   setFAction]   = useState("");
@@ -130,24 +142,33 @@ export default function AuditLog() {
   }, [role]);
 
   /* ── fetch entries ────────────────────────────────────────────────── */
-  function buildQS() {
-    const p = new URLSearchParams();
-    if (fAction) p.set("action",    fAction);
-    if (fUser)   p.set("user_id",   fUser);
-    if (fFrom)   p.set("from_date", fFrom + "T00:00:00");
-    if (fTo)     p.set("to_date",   fTo   + "T23:59:59");
-    const s = p.toString();
-    return s ? "?" + s : "";
+  function buildQS(p = page, ps = pageSize) {
+    const params = new URLSearchParams();
+    if (fAction) params.set("action",    fAction);
+    if (fUser)   params.set("user_id",   fUser);
+    if (fFrom)   params.set("from_date", fFrom + "T00:00:00");
+    if (fTo)     params.set("to_date",   fTo   + "T23:59:59");
+    params.set("page",      String(p));
+    params.set("page_size", String(ps));
+    return "?" + params.toString();
   }
 
-  function fetchEntries() {
+  function fetchEntries(p = page, ps = pageSize) {
     setLoading(true);
     setError(null);
-    api.get(`/governance/audit-log${buildQS()}`)
-      .then(({ data }) => setEntries(data))
+    api.get(`/governance/audit-log${buildQS(p, ps)}`)
+      .then(({ data }) => {
+        setEntries(data.items);
+        setTotal(data.total);
+        setTotalPages(data.total_pages);
+        setPage(data.page);
+      })
       .catch(err => setError(err?.response?.data?.detail ?? "Failed to load audit log"))
       .finally(() => setLoading(false));
   }
+
+  function handlePage(p) { setPage(p); fetchEntries(p, pageSize); }
+  function handlePageSize(ps) { setPageSize(ps); setPage(1); fetchEntries(1, ps); }
 
   useEffect(() => { if (role === "admin") fetchEntries(); }, [role]);
 
@@ -189,6 +210,8 @@ export default function AuditLog() {
     : entries;
   const uniqueUsers = new Set(visibleEntries.map(e => e.username).filter(u => u && u !== "system")).size;
   const systemCount = visibleEntries.filter(e => !e.username || e.username === "system").length;
+  // For stat card: show backend total (all pages) unless category-filtered client-side
+  const displayTotal = fCategory ? visibleEntries.length : total;
 
   /* ── group actions for dropdown ───────────────────────────────────── */
   const actionGroups = {};
@@ -200,17 +223,17 @@ export default function AuditLog() {
 
   /* ════════════════════════════════════════════════════════════════════ */
   return (
-    <div className="p-6 max-w-screen-xl mx-auto space-y-6">
+    <div className={`p-6 max-w-screen-xl mx-auto space-y-6 ${dark ? "" : "audit-light"}`}>
 
       {/* ── header ── */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Audit Log</h1>
+        <h1 className={`text-2xl font-bold ${dark ? "text-white" : "text-slate-900"}`}>Audit Log</h1>
         <p className="text-gray-400 text-sm mt-0.5">Complete tamper-evident record of all system actions — admin only</p>
       </div>
 
       {/* ── stat cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard label="Total Entries"  value={visibleEntries.length.toLocaleString()} sub={fCategory ? `filtered: ${fCategory}` : undefined} />
+        <StatCard label="Total Entries"  value={displayTotal} sub={fCategory ? `filtered: ${fCategory}` : undefined} />
         <StatCard label="Named Users"    value={uniqueUsers}  sub="system actions excluded" />
         <StatCard label="System Actions" value={systemCount}  sub="no user context" />
       </div>
@@ -242,13 +265,13 @@ export default function AuditLog() {
 
           <div className="flex items-center gap-2 mt-4">
             <button
-              onClick={fetchEntries}
+              onClick={() => { setPage(1); fetchEntries(1, pageSize); }}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
             >
               Apply filters
             </button>
             <button
-              onClick={() => { setFAction(""); setFUser(""); setFFrom(""); setFTo(""); }}
+              onClick={() => { setFAction(""); setFUser(""); setFFrom(""); setFTo(""); setPage(1); }}
               className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 text-sm px-4 py-2 rounded-lg transition-colors"
             >
               Clear
@@ -298,7 +321,7 @@ export default function AuditLog() {
           onClick={() => setFCategory("")}
           className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium transition-all ${
             fCategory === ""
-              ? "bg-gray-600 text-white border-gray-400"
+              ? dark ? "bg-gray-600 text-white border-gray-400" : "bg-slate-300 text-slate-800 border-slate-400"
               : "bg-gray-800/40 text-gray-500 border-gray-700 hover:border-gray-500 hover:text-gray-300"
           }`}
         >
@@ -431,9 +454,18 @@ export default function AuditLog() {
           </div>
         )}
 
+        {!loading && !fCategory && total > 0 && (
+          <Paginator
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            totalPages={totalPages}
+            onPage={handlePage}
+            onPageSize={handlePageSize}
+          />
+        )}
         {!loading && visibleEntries.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-800 flex items-center justify-between text-xs text-gray-600">
-            <span>{visibleEntries.length.toLocaleString()} {visibleEntries.length === 1 ? "entry" : "entries"}{fCategory ? ` · ${fCategory}` : ""}</span>
+          <div className="px-5 py-2 flex justify-end text-xs text-gray-600">
             <span>Click any row to expand full details</span>
           </div>
         )}

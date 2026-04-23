@@ -163,10 +163,23 @@ def get_latest_evaluation(service_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{service_id}")
-def get_service_evaluations(service_id: int, db: Session = Depends(get_db)):
-    return (
+def get_service_evaluations(
+    service_id: int,
+    page:      int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    q = (
         db.query(Evaluation)
         .filter(Evaluation.service_id == service_id)
         .order_by(Evaluation.timestamp.desc())
-        .all()
     )
+    total = q.count()
+    items = q.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "items":       items,
+        "total":       total,
+        "page":        page,
+        "page_size":   page_size,
+        "total_pages": max(1, -(-total // page_size)),
+    }

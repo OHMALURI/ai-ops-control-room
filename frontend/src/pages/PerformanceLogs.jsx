@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import api from '../api.js';
 import EvaluationDashboard from '../components/EvaluationDashboard.jsx';
+import Paginator from '../components/Paginator.jsx';
 
 const METRICS = [
   { key: 'quality_score',       label: 'Quality Score',        color: '#4f46e5', unit: '%' },
@@ -53,6 +54,12 @@ export default function PerformanceLogs() {
   const [expandedEval, setExpandedEval] = useState(null);
   const [sampleFilter, setSampleFilter] = useState('all');
 
+  /* pagination */
+  const [page,       setPage]       = useState(1);
+  const [pageSize,   setPageSize]   = useState(25);
+  const [total,      setTotal]      = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   useEffect(() => {
     api.get('/services/')
       .then(r => {
@@ -63,14 +70,25 @@ export default function PerformanceLogs() {
       .finally(() => setServicesLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (!selected) return;
+  function fetchLogs(svc, p = 1, ps = pageSize) {
+    if (!svc) return;
     setLoading(true);
-    api.get(`/evaluations/${selected.id}`)
-      .then(r => setLogs(r.data || []))
+    api.get(`/evaluations/${svc.id}?page=${p}&page_size=${ps}`)
+      .then(r => {
+        setLogs(r.data.items || []);
+        setTotal(r.data.total || 0);
+        setTotalPages(r.data.total_pages || 1);
+        setPage(r.data.page || 1);
+        setExpandedEval(null);
+      })
       .catch(() => setLogs([]))
       .finally(() => setLoading(false));
-  }, [selected]);
+  }
+
+  useEffect(() => { fetchLogs(selected, 1, pageSize); setPage(1); }, [selected]);
+
+  function handlePage(p) { setPage(p); fetchLogs(selected, p, pageSize); }
+  function handlePageSize(ps) { setPageSize(ps); setPage(1); fetchLogs(selected, 1, ps); }
 
   useEffect(() => {
     const initialVisible = {};
@@ -206,7 +224,7 @@ export default function PerformanceLogs() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">
                   Evaluation History {selected ? `— ${selected.name}` : ''}
-                  {logs.length > 0 && <span className="ml-2 text-xs font-normal text-gray-400">({logs.length} records)</span>}
+                  {total > 0 && <span className="ml-2 text-xs font-normal text-gray-400">({total.toLocaleString()} records)</span>}
                 </h2>
                 <input
                   type="text"
@@ -361,6 +379,16 @@ export default function PerformanceLogs() {
                     </tbody>
                   </table>
                 </div>
+              )}
+              {!loading && total > 0 && (
+                <Paginator
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  totalPages={totalPages}
+                  onPage={handlePage}
+                  onPageSize={handlePageSize}
+                />
               )}
             </div>
             </>

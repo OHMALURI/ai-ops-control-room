@@ -69,21 +69,25 @@ def get_audit_log(
     to_date:   Optional[str] = Query(None),
     action:    Optional[str] = Query(None),
     user_id:   Optional[int] = Query(None),
+    page:      int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return audit log entries with optional filters. Admin only."""
+    """Return paginated audit log entries with optional filters. Admin only."""
     _require_admin(current_user, db)
 
-    rows = _build_query(
-        db,
-        _parse_date(from_date),
-        _parse_date(to_date),
-        action or None,
-        user_id,
-    ).all()
+    q = _build_query(db, _parse_date(from_date), _parse_date(to_date), action or None, user_id)
+    total = q.count()
+    rows  = q.offset((page - 1) * page_size).limit(page_size).all()
 
-    return _enrich_rows(rows, db)
+    return {
+        "items":       _enrich_rows(rows, db),
+        "total":       total,
+        "page":        page,
+        "page_size":   page_size,
+        "total_pages": max(1, -(-total // page_size)),  # ceiling division
+    }
 
 
 @router.get("/audit-log/actions")
