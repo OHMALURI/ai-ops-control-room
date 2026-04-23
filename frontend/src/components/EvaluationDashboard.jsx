@@ -78,7 +78,7 @@ const ServiceCard = ({ service }) => {
       }
       try {
         const allRes = await api.get(`/evaluations/${service.id}`);
-        setAllEvals(allRes.data || []);
+        setAllEvals(allRes.data.items || allRes.data || []);
       } catch (err) {
         if (err.response?.status === 404) setAllEvals([]);
       }

@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import api from "../api.js";
+import { useEffect, useRef } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 
 /* Pre-compute dot grid positions (outside component — computed once) */
@@ -9,24 +8,6 @@ for (let row = 0; row * DOT_GAP < 330; row++) {
   for (let col = 0; col * DOT_GAP < 920; col++) {
     DOTS.push({ cx: col * DOT_GAP + 1.2, cy: row * DOT_GAP + 1.2 });
   }
-}
-
-/* ── Helpers ─────────────────────────────────────────────────── */
-
-function actionColor(action) {
-  const cat = (action || "").split(".")[0];
-  return { auth:"#60a5fa", evaluation:"#a78bfa", incident:"#fbbf24",
-           service:"#34d399", maintenance:"#c084fc", governance:"#22d3ee" }[cat] ?? "#64748b";
-}
-
-function relTime(ts) {
-  if (!ts) return "";
-  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 /* ── Data ────────────────────────────────────────────────────── */
@@ -120,9 +101,6 @@ const SENS_LIGHT = {
 export default function DataPolicy() {
   const { dark } = useTheme();
   const isAdmin = localStorage.getItem("effectiveRole") === "admin";
-  const [auditFeed,    setAuditFeed]    = useState([]);
-  const [auditLoading, setAuditLoading] = useState(false);
-
   /* ── Theme colour palette ── */
   const C = {
     pageBg:        dark ? "#08090f"  : "#f4f6fb",
@@ -155,17 +133,6 @@ export default function DataPolicy() {
     flowNodeSub:   dark ? "#1e2d3d"  : "#94a3b8",
     arrowCloud:    dark ? "#fbbf24"  : "#f59e0b",
     arrowNorm:     dark ? "#1e2d3d"  : "#cbd5e1",
-    auditBg:       dark ? "#070910"  : "#f8fafc",
-    auditBorder:   dark ? "#131b28"  : "#e2e8f0",
-    auditHdrBorder:dark ? "#0e1420"  : "#f1f5f9",
-    auditHdrText:  dark ? "#1e2d3d"  : "#94a3b8",
-    auditRowBorder:dark ? "#0c1018"  : "#f1f5f9",
-    auditActRest:  dark ? "#374151"  : "#64748b",
-    auditUser:     dark ? "#263040"  : "#94a3b8",
-    auditTime:     dark ? "#1a2535"  : "#cbd5e1",
-    skelDot:       dark ? "#1a2535"  : "#e2e8f0",
-    skelBar:       dark ? "#111827"  : "#f1f5f9",
-    noEntries:     dark ? "#1e2d3d"  : "#94a3b8",
     warningText:   dark ? "#f87171"  : "#dc2626",
     warningBody:   dark ? "#374151"  : "#64748b",
     footerBorder:  dark ? "#10161f"  : "#e2e8f0",
@@ -242,14 +209,6 @@ export default function DataPolicy() {
     });
   }
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    setAuditLoading(true);
-    api.get("/governance/audit-log")
-      .then(({ data }) => setAuditFeed(data.slice(0, 7)))
-      .catch(() => {})
-      .finally(() => setAuditLoading(false));
-  }, [isAdmin]);
 
   return (
     <div style={{ minHeight: "100vh", background: C.pageBg, color: C.pageText }}>
@@ -348,11 +307,11 @@ export default function DataPolicy() {
           </g>
 
           {/* Hub labels */}
-          <text x={HUB.x} y={HUB.y + 10} textAnchor="middle" fontSize="8.2" fontWeight="800"
+          <text x={HUB.x} y={HUB.y + 10} textAnchor="middle" fontSize="10.5" fontWeight="800"
             fill={C.hubText} fontFamily="system-ui,sans-serif" letterSpacing="0.6">AI PULSE</text>
-          <text x={HUB.x} y={HUB.y + 22} textAnchor="middle" fontSize="5" fontWeight="600"
+          <text x={HUB.x} y={HUB.y + 23} textAnchor="middle" fontSize="6.5" fontWeight="600"
             fill={C.hubSub} fontFamily="system-ui,sans-serif" letterSpacing="1.8">DATA POLICY</text>
-          <text x={HUB.x} y={HUB.y + 33} textAnchor="middle" fontSize="3.8"
+          <text x={HUB.x} y={HUB.y + 35} textAnchor="middle" fontSize="5"
             fill={C.hubVer} fontFamily="system-ui,sans-serif">v1.2 · April 2026</text>
 
           {/* Topic nodes */}
@@ -369,12 +328,12 @@ export default function DataPolicy() {
               {/* Centre dot */}
               <circle cx={n.x} cy={n.y} r="3.2" fill={n.color} fillOpacity="0.9" />
               {/* Labels */}
-              <text x={n.x} y={n.y - 8} textAnchor="middle" fontSize="5.4" fontWeight="700"
+              <text x={n.x} y={n.y - 7} textAnchor="middle" fontSize="7" fontWeight="700"
                 fill={n.color} fontFamily="system-ui,sans-serif">{n.label[0]}</text>
-              <text x={n.x} y={n.y + 8} textAnchor="middle" fontSize="5.4" fontWeight="700"
+              <text x={n.x} y={n.y + 9} textAnchor="middle" fontSize="7" fontWeight="700"
                 fill={n.color} fontFamily="system-ui,sans-serif">{n.label[1]}</text>
               {/* Count */}
-              <text x={n.x} y={n.y + 40} textAnchor="middle" fontSize="3.8"
+              <text x={n.x} y={n.y + 42} textAnchor="middle" fontSize="5.5"
                 fill={C.nodeCount} fontFamily="system-ui,sans-serif">{n.count}</text>
             </g>
           ))}
@@ -384,7 +343,7 @@ export default function DataPolicy() {
       {/* ══ Section divider ══ */}
       <div style={{ display: "flex", alignItems: "center", padding: "0 28px", margin: "0 0 20px" }}>
         <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg,transparent,${C.divGrad})` }} />
-        <span style={{ margin: "0 14px", fontSize: "9.5px", fontWeight: 700, color: C.divText,
+        <span style={{ margin: "0 14px", fontSize: "12px", fontWeight: 700, color: C.divText,
           letterSpacing: "0.18em", textTransform: "uppercase" }}>Policy Details</span>
         <div style={{ flex: 1, height: "1px", background: `linear-gradient(90deg,${C.divGrad},transparent)` }} />
       </div>
@@ -412,11 +371,11 @@ export default function DataPolicy() {
                       <div key={d.type} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ color: C.classTitle, fontSize: 12, fontWeight: 600, marginBottom: 1 }}>{d.type}</p>
-                          <p style={{ color: C.classField, fontSize: 10, lineHeight: 1.4 }}>{d.fields}</p>
+                          <p style={{ color: C.classField, fontSize: 12, lineHeight: 1.4 }}>{d.fields}</p>
                         </div>
                         <span style={{
                           background: s.bg, border: `1px solid ${s.border}`,
-                          color: s.text, fontSize: 9, fontWeight: 700,
+                          color: s.text, fontSize: 11, fontWeight: 700,
                           padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap",
                           textTransform: "uppercase", letterSpacing: "0.04em", flexShrink: 0,
                         }}>{d.sensitivity}</span>
@@ -440,7 +399,7 @@ export default function DataPolicy() {
                       <span key={c} style={{
                         display: "inline-flex", alignItems: "center", gap: 5,
                         background: `${color}12`, border: `1px solid ${color}30`,
-                        color: C.compBadgeText, fontSize: 11, fontWeight: 600,
+                        color: C.compBadgeText, fontSize: 13, fontWeight: 600,
                         padding: "4px 10px", borderRadius: 999,
                       }}>
                         <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
@@ -451,7 +410,7 @@ export default function DataPolicy() {
 
                   {/* Data flow mini-diagram */}
                   <div style={{ background: C.flowBg, border: `1px solid ${C.flowBorder}`, borderRadius: 9, padding: "10px 12px", marginBottom: 12 }}>
-                    <p style={{ color: C.flowLabel, fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+                    <p style={{ color: C.flowLabel, fontSize: 11, fontWeight: 700, textTransform: "uppercase",
                       letterSpacing: "0.12em", marginBottom: 8 }}>Data Flow Boundary</p>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
                       {[
@@ -468,71 +427,16 @@ export default function DataPolicy() {
                           border: `1px solid ${item.accent ? color + "35" : C.flowNodeBorder}`,
                           borderRadius: 6, padding: "4px 9px", textAlign: "center",
                         }}>
-                          <p style={{ color: item.accent ? color : C.flowNodeText, fontSize: 9.5, fontWeight: 700 }}>{item.label}</p>
-                          <p style={{ color: C.flowNodeSub, fontSize: 8, marginTop: 1 }}>{item.sub}</p>
+                          <p style={{ color: item.accent ? color : C.flowNodeText, fontSize: 12, fontWeight: 700 }}>{item.label}</p>
+                          <p style={{ color: C.flowNodeSub, fontSize: 10, marginTop: 1 }}>{item.sub}</p>
                         </div>
                       ))}
                     </div>
-                    <p style={{ textAlign: "center", fontSize: 8.5, color: C.flowLabel, marginTop: 7 }}>
+                    <p style={{ textAlign: "center", fontSize: 11, color: C.flowLabel, marginTop: 7 }}>
                       localhost only · browser never contacts cloud
                     </p>
                   </div>
 
-                  {/* Live audit feed — admin only */}
-                  {isAdmin && (
-                    <div style={{ background: C.auditBg, border: `1px solid ${C.auditBorder}`, borderRadius: 9, marginBottom: 12, overflow: "hidden" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                        padding: "8px 12px", borderBottom: `1px solid ${C.auditHdrBorder}` }}>
-                        <span style={{ color: C.auditHdrText, fontSize: 9, fontWeight: 700,
-                          textTransform: "uppercase", letterSpacing: "0.12em" }}>Live Audit Feed</span>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: color,
-                            boxShadow: `0 0 5px ${color}`, animation: "hub-pulse 2s ease-in-out infinite" }} />
-                          <span style={{ color, fontSize: 8.5, fontWeight: 700 }}>LIVE</span>
-                        </span>
-                      </div>
-
-                      <div style={{ maxHeight: 168, overflowY: "auto" }}>
-                        {auditLoading ? (
-                          Array.from({ length: 4 }).map((_, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
-                              padding: "7px 12px", borderBottom: `1px solid ${C.auditHdrBorder}` }}>
-                              <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.skelDot, flexShrink: 0 }} />
-                              <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.skelBar }} />
-                              <div style={{ width: 32, height: 7, borderRadius: 4, background: C.skelBar }} />
-                            </div>
-                          ))
-                        ) : auditFeed.length === 0 ? (
-                          <p style={{ color: C.noEntries, fontSize: 10, padding: "12px", textAlign: "center" }}>
-                            No entries found
-                          </p>
-                        ) : auditFeed.map((entry, i) => {
-                          const ac = actionColor(entry.action);
-                          const [cat, ...rest] = (entry.action || "").split(".");
-                          return (
-                            <div key={entry.id ?? i} style={{
-                              display: "flex", alignItems: "center", gap: 8,
-                              padding: "7px 12px",
-                              borderBottom: i < auditFeed.length - 1 ? `1px solid ${C.auditRowBorder}` : "none",
-                            }}>
-                              <div style={{ width: 6, height: 6, borderRadius: "50%",
-                                background: ac, flexShrink: 0, boxShadow: `0 0 4px ${ac}80` }} />
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ color: ac, fontSize: 9.5, fontWeight: 700, marginRight: 4 }}>{cat}</span>
-                                <span style={{ color: C.auditActRest, fontSize: 9.5 }}>.{rest.join(".")}</span>
-                              </div>
-                              <span style={{ color: C.auditUser, fontSize: 9, flexShrink: 0 }}>
-                                {entry.username ?? "system"}
-                              </span>
-                              <span style={{ color: C.auditTime, fontSize: 8.5, flexShrink: 0, minWidth: 42, textAlign: "right" }}>
-                                {relTime(entry.timestamp)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Warning */}
                   <div style={{ background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)",
@@ -565,7 +469,7 @@ export default function DataPolicy() {
                         width: 18, height: 18, borderRadius: "50%",
                         background: `${color}14`, border: `1px solid ${color}35`,
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 8, fontWeight: 800, color, flexShrink: 0, marginTop: 1,
+                        fontSize: 10, fontWeight: 800, color, flexShrink: 0, marginTop: 1,
                       }}>{ri + 1}</span>
                       <span style={{ color: C.ruleText, fontSize: 12, lineHeight: 1.65 }}>{rule}</span>
                     </li>
@@ -599,9 +503,9 @@ function CardHeader({ color, title, sub, borderColor, subColor }) {
           boxShadow: `0 0 6px ${color}` }} />
       </div>
       <div>
-        <p style={{ color, fontSize: 11, fontWeight: 700, letterSpacing: "0.09em",
+        <p style={{ color, fontSize: 13, fontWeight: 700, letterSpacing: "0.09em",
           textTransform: "uppercase", marginBottom: 1 }}>{title}</p>
-        <p style={{ color: subColor, fontSize: 10 }}>{sub}</p>
+        <p style={{ color: subColor, fontSize: 12 }}>{sub}</p>
       </div>
     </div>
   );

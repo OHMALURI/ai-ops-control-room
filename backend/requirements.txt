@@ -9,5 +9,4 @@ passlib
 python-jose
 pytest
 python-multipart
-deepeval
 httpx

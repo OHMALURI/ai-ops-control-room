@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend, ReferenceLine
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine
 } from 'recharts';
 import api from '../api.js';
 import EvaluationDashboard from '../components/EvaluationDashboard.jsx';
@@ -83,8 +83,6 @@ export default function PerformanceLogs() {
   const [logs, setLogs]               = useState([]);
   const [loading, setLoading]         = useState(false);
   const [servicesLoading, setServicesLoading] = useState(true);
-  const [activeMetric, setActiveMetric] = useState('quality_score');
-  const [visibleLines, setVisibleLines] = useState({});
   const [search, setSearch]           = useState('');
   const [expandedEval, setExpandedEval] = useState(null);
   const [sampleFilter, setSampleFilter] = useState('all');
@@ -131,25 +129,6 @@ export default function PerformanceLogs() {
         .finally(() => setCompareLoading(prev => { const s = new Set(prev); s.delete(id); return s; }));
     });
   }, [compareIds]);
-
-  const toggleLine = (key) => setVisibleLines(p => ({ ...p, [key]: !p[key] }));
-  const isAllSelected = METRICS.every(m => visibleLines[m.key]);
-  const toggleAllLines = () => {
-    const newVisible = {};
-    METRICS.forEach(m => newVisible[m.key] = !isAllSelected);
-    setVisibleLines(newVisible);
-  };
-
-  const chartData = [...logs].reverse().map(e => {
-    const row = {
-      time: new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      fullDate: new Date(e.timestamp).toLocaleString(),
-    };
-    METRICS.forEach(m => {
-      row[m.key] = m.key === 'latency_ms' ? e[m.key] : parseFloat((e[m.key] || 0).toFixed(1));
-    });
-    return row;
-  });
 
   const filteredLogs = logs.filter(e => {
     const ts = new Date(e.timestamp).toLocaleString().toLowerCase();

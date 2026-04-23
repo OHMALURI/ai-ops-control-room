@@ -662,27 +662,46 @@ def _run_evaluation_body(service, service_id, db, stop_flag, t_start, on_progres
           f"knowledge={factuality_score:.1f}% security={toxicity_score:.1f}% "
           f"latency={latency_ms}ms questions={len(per_sample)}")
 
-    # ── Drift detection — compare against best historical score ───────────────
+    # ── Drift detection (evaluation flag) — overall quality only ─────────────
     drift_triggered = False
     drift_type      = None
     drift_reason    = None
 
     from sqlalchemy import func as _func
-    best_row = (
+
+    best_overall = (
         db.query(_func.max(Evaluation.quality_score))
         .filter(Evaluation.service_id == service_id)
         .scalar()
     )
-
-    if best_row is not None and (best_row - quality_score) >= 15.0:
+    if best_overall is not None and (best_overall - quality_score) >= 15.0:
         drift_triggered = True
         drift_type      = "Performance Drift"
-        drift_reason    = f"Quality dropped from best {best_row:.1f}% to {quality_score:.1f}%"
+        drift_reason    = f"Quality dropped from best {best_overall:.1f}% to {quality_score:.1f}%"
 
     if not drift_triggered and quality_score < 50.0:
         drift_triggered = True
         drift_type      = "Low Quality"
         drift_reason    = f"Quality score {quality_score:.1f}% is below 50% threshold"
+
+    # ── Per-category incident triggers (separate from drift flag) ────────────
+    # A ≥15% drop in any category from its historical best creates an incident
+    # but does NOT mark the evaluation as drifted.
+    _cat_checks = [
+        ("accuracy",         accuracy,         "Math"),
+        ("relevance_score",  relevance_score,  "Reasoning"),
+        ("factuality_score", factuality_score, "Knowledge"),
+        ("toxicity_score",   toxicity_score,   "Security"),
+    ]
+    category_incidents = []   # list of (label, best, current) for each triggered category
+    for col_name, cur_val, label in _cat_checks:
+        best_cat = (
+            db.query(_func.max(getattr(Evaluation, col_name)))
+            .filter(Evaluation.service_id == service_id)
+            .scalar()
+        )
+        if best_cat is not None and cur_val is not None and (best_cat - cur_val) >= 15.0:
+            category_incidents.append((label, best_cat, cur_val))
 
     check_results = json.dumps({
         "questions_evaluated": len(per_sample),
@@ -714,7 +733,7 @@ def _run_evaluation_body(service, service_id, db, stop_flag, t_start, on_progres
 
     # ── Audit log ─────────────────────────────────────────────────────────────
     from datetime import datetime as _dt
-    if quality_score < 50 or drift_triggered:
+    if drift_triggered:
         eval_status = "Drift"
     elif quality_score < 70:
         eval_status = "Warn"
@@ -734,4 +753,136 @@ def _run_evaluation_body(service, service_id, db, stop_flag, t_start, on_progres
     ))
     db.commit()
 
+    # ── Auto-create incidents if needed ──────────────────────────────────────
+    needs_incident = drift_triggered or bool(category_incidents)
+    if needs_incident:
+        from models import Incident as _Incident
+        open_incident = (
+            db.query(_Incident)
+            .filter(
+                _Incident.service_id == service_id,
+                _Incident.status.in_(["open", "pending", "investigating"]),
+            )
+            .first()
+        )
+        if not open_incident:
+            # Build unified context: drift reason + any category drops
+            if drift_triggered:
+                inc_type   = drift_type
+                inc_reason = drift_reason
+                details    = [drift_reason] + [
+                    f"{lbl} dropped from best {b:.1f}% to {c:.1f}%"
+                    for lbl, b, c in category_incidents
+                ]
+            else:
+                labels     = [lbl for lbl, _, _ in category_incidents]
+                inc_type   = f"Category Degradation ({', '.join(labels)})"
+                inc_reason = "; ".join(
+                    f"{lbl} dropped from best {b:.1f}% to {c:.1f}%"
+                    for lbl, b, c in category_incidents
+                )
+                details    = [inc_reason]
+
+            _auto_create_incident(
+                db=db,
+                service=service,
+                evaluation=evaluation,
+                drift_type=inc_type,
+                drift_reason=inc_reason,
+                drift_details=details,
+                quality_score=quality_score,
+                accuracy=accuracy,
+                relevance_score=relevance_score,
+                factuality_score=factuality_score,
+                toxicity_score=toxicity_score,
+                category_summary=category_summary,
+            )
+
     return evaluation
+
+
+# ── Auto-incident helper ──────────────────────────────────────────────────────
+def _auto_create_incident(db, service, evaluation, drift_type, drift_reason,
+                          drift_details, quality_score, accuracy, relevance_score,
+                          factuality_score, toxicity_score, category_summary):
+    from datetime import datetime as _dt2
+    import re as _re
+
+    # Build Gemini prompt
+    cat_lines = "\n".join(f"  - {cat}: {score:.1f}%" for cat, score in category_summary.items())
+    conditions = "\n".join(f"  • {d}" for d in drift_details) if drift_details else f"  • {drift_reason}"
+    prompt = f"""You are an AI operations incident analyst. A drift alert has been triggered for an LLM service. Write a concise incident report.
+
+Service: {service.name}
+Model: {service.model_name}
+Owner: {service.owner}
+Environment: {service.environment}
+
+Drift Type: {drift_type}
+Triggered Conditions:
+{conditions}
+
+Current Scores:
+  - Overall Quality: {quality_score:.1f}%
+  - Math (Accuracy): {accuracy:.1f}%
+  - Reasoning (Relevance): {relevance_score:.1f}%
+  - Knowledge (Factuality): {factuality_score:.1f}%
+  - Security (Toxicity): {toxicity_score:.1f}%
+
+Category Breakdown:
+{cat_lines}
+
+Respond ONLY with valid JSON (no markdown fences):
+{{"symptoms": "2-3 bullet points as a single string describing what degraded", "summary": "2-3 sentence narrative explaining likely cause and business impact", "severity": "critical|high|medium|low"}}"""
+
+    symptoms_text = drift_reason
+    llm_summary   = None
+    severity      = "critical" if quality_score < 50.0 else "high"
+
+    try:
+        import google.generativeai as genai
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if gemini_key:
+            genai.configure(api_key=gemini_key)
+            raw = genai.GenerativeModel("gemini-2.5-flash").generate_content(prompt).text.strip()
+            raw = _re.sub(r"```(?:json)?", "", raw).replace("```", "").strip()
+            m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+            if m:
+                parsed = json.loads(m.group())
+                symptoms_text = parsed.get("symptoms", symptoms_text)
+                llm_summary   = parsed.get("summary")
+                sev = parsed.get("severity", "").lower()
+                if sev in ("critical", "high", "medium", "low"):
+                    severity = sev
+    except Exception as exc:
+        print(f"[evaluator] Gemini incident report failed: {exc}")
+
+    from models import Incident as _Incident
+    incident = _Incident(
+        service_id  = service.id,
+        severity    = severity,
+        symptoms    = symptoms_text,
+        timeline    = (
+            f"Auto-detected at {_dt2.utcnow().strftime('%Y-%m-%d %H:%M')} UTC "
+            f"during evaluation run #{evaluation.id}. {drift_reason}"
+        ),
+        status      = "open",
+        llm_summary = llm_summary,
+        approved    = False,
+    )
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+
+    db.add(AuditLog(
+        user_id=None,
+        action="incident.auto_created",
+        resource=f"incidents/{incident.id}",
+        details=(
+            f"Auto-incident for {service.name} | {drift_type} | "
+            f"Quality: {quality_score:.1f}% | Eval #{evaluation.id}"
+        ),
+        timestamp=_dt2.utcnow(),
+    ))
+    db.commit()
+    print(f"[evaluator] Auto-created incident #{incident.id} for '{service.name}': {drift_type}")
