@@ -246,6 +246,25 @@ def delete_service(service_id: int, db: Session = Depends(get_db), current_user=
     return {"message": "Service deleted"}
 
 
+@router.patch("/{service_id}/auto-eval")
+def toggle_auto_eval(service_id: int, db: Session = Depends(get_db), current_user=Depends(get_optional_user)):
+    """Toggle the hourly auto-evaluation on or off for a service."""
+    service = _get_or_404(service_id, db)
+    service.auto_eval_enabled = not service.auto_eval_enabled
+    db.commit()
+    db.refresh(service)
+    state = "enabled" if service.auto_eval_enabled else "disabled"
+    db.add(AuditLog(
+        user_id=_uid(current_user),
+        action="service.auto_eval_toggle",
+        resource=f"services/{service_id}",
+        details=f"Auto-evaluation {state} for service '{service.name}' by {_uname(current_user)}",
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+    return {"id": service.id, "auto_eval_enabled": service.auto_eval_enabled}
+
+
 @router.post("/{service_id}/test")
 def test_service(service_id: int, db: Session = Depends(get_db)):
     """Ping the service's model to verify it is reachable."""

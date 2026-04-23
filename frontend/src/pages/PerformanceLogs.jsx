@@ -20,20 +20,23 @@ function StatusBadge({ score, prevScore }) {
 
   // Rule 3: below 50 is always drift
   if (score < 50) return (
-    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600">
-      <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
-      Drift
+    <span className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black bg-red-600 text-white shadow-md shadow-red-500/50 animate-pulse">
+      <span className="relative flex h-2.5 w-2.5 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-200 opacity-80" />
+        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+      </span>
+      DRIFT
     </span>
   );
 
   // Rule 2: first run thresholds
   if (prevScore == null) {
-    if (score < 70) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />Warn</span>;
+    if (score < 70) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />⚠ Warn</span>;
     return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />Good</span>;
   }
 
   // Subsequent runs: dropped from previous → warn, else good
-  if (score < prevScore) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />Warn</span>;
+  if (score < prevScore) return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700"><span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />⚠ Warn</span>;
   return <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" />Good</span>;
 }
 
@@ -48,6 +51,7 @@ export default function PerformanceLogs() {
   const [visibleLines, setVisibleLines] = useState({});
   const [search, setSearch]           = useState('');
   const [expandedEval, setExpandedEval] = useState(null);
+  const [sampleFilter, setSampleFilter] = useState('all');
 
   useEffect(() => {
     api.get('/services/')
@@ -224,7 +228,6 @@ export default function PerformanceLogs() {
                         <th className="px-5 py-3 text-left font-semibold">Timestamp</th>
                         <th className="px-5 py-3 text-left font-semibold">Quality Score</th>
                         <th className="px-5 py-3 text-left font-semibold">Runtime</th>
-                        <th className="px-5 py-3 text-left font-semibold">Drift</th>
                         <th className="px-5 py-3 text-left font-semibold">Status</th>
                         <th className="px-5 py-3 text-right font-semibold">Details</th>
                       </tr>
@@ -245,15 +248,10 @@ export default function PerformanceLogs() {
                               <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{new Date(e.timestamp).toLocaleString()}</td>
                               <td className="px-5 py-3 font-semibold text-indigo-700 tabular-nums">{e.quality_score != null ? `${e.quality_score.toFixed(1)}%` : '—'}</td>
                               <td className="px-5 py-3 text-emerald-700 tabular-nums">{e.latency_ms ? `${e.latency_ms}ms` : '—'}</td>
-                              <td className="px-5 py-3">
-                                {e.drift_triggered
-                                  ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600 animate-pulse">Drift</span>
-                                  : <span className="text-gray-300 text-xs">—</span>}
-                              </td>
                               <td className="px-5 py-3"><StatusBadge score={e.quality_score} prevScore={prevScore} /></td>
                               <td className="px-5 py-3 text-right">
                                 <button
-                                  onClick={() => setExpandedEval(isExp ? null : e.id)}
+                                  onClick={() => { setExpandedEval(isExp ? null : e.id); setSampleFilter('all'); }}
                                   className="text-xs px-3 py-1 font-semibold rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
                                 >
                                   {isExp ? 'Hide Logs' : 'View Logs'}
@@ -262,13 +260,37 @@ export default function PerformanceLogs() {
                             </tr>
                             {isExp && (
                               <tr>
-                                <td colSpan={6} className="bg-slate-50 p-6 border-b border-gray-200">
+                                <td colSpan={5} className="bg-slate-50 p-6 border-b border-gray-200">
                                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col gap-4 p-4">
-                                    <h4 className="font-bold text-sm text-gray-700 mb-2 border-b pb-2">Sample Evaluation Details</h4>
+                                    <div className="flex items-center justify-between flex-wrap gap-3 border-b pb-3">
+                                      <h4 className="font-bold text-sm text-gray-700">Sample Evaluation Details</h4>
+                                      <div className="flex gap-1.5 flex-wrap">
+                                        {['all', 'math', 'reasoning', 'knowledge', 'security'].map(cat => {
+                                          const active = sampleFilter === cat;
+                                          const colors = {
+                                            all:       active ? 'bg-slate-800 text-white border-slate-800'       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400',
+                                            math:      active ? 'bg-indigo-600 text-white border-indigo-600'     : 'bg-white text-indigo-500 border-indigo-200 hover:border-indigo-400',
+                                            reasoning: active ? 'bg-cyan-600 text-white border-cyan-600'         : 'bg-white text-cyan-600 border-cyan-200 hover:border-cyan-400',
+                                            knowledge: active ? 'bg-green-600 text-white border-green-600'       : 'bg-white text-green-600 border-green-200 hover:border-green-400',
+                                            security:  active ? 'bg-amber-500 text-white border-amber-500'       : 'bg-white text-amber-600 border-amber-200 hover:border-amber-400',
+                                          };
+                                          const count = cat === 'all' ? samples.length : samples.filter(s => s.category === cat).length;
+                                          return (
+                                            <button
+                                              key={cat}
+                                              onClick={() => setSampleFilter(cat)}
+                                              className={`px-3 py-1 rounded-full text-[11px] font-bold border capitalize transition-all ${colors[cat]}`}
+                                            >
+                                              {cat} ({count})
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
                                     {samples.length === 0 ? (
                                       <p className="text-xs text-gray-500">No sample details available.</p>
                                     ) : (
-                                      samples.map((s, idx) => {
+                                      samples.filter(s => sampleFilter === 'all' || s.category === sampleFilter).map((s, idx) => {
                                         const scorePct = s.score_pct ?? (s.si != null ? s.si * 100 : null);
                                         const methodColor = s.method?.startsWith('exact') ? 'bg-blue-100 text-blue-700'
                                           : s.method?.startsWith('safety') ? 'bg-orange-100 text-orange-700'

@@ -44,6 +44,7 @@ class Service(Base):
     system_prompt = Column(String, nullable=True)
     api_key_ref = Column(String, nullable=True)
     data_sensitivity = Column(String, nullable=False)
+    auto_eval_enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

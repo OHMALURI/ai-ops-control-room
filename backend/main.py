@@ -32,7 +32,7 @@ app.add_middleware(
 def run_all_evaluations():
     db = SessionLocal()
     try:
-        services = db.query(Service).all()
+        services = db.query(Service).filter(Service.auto_eval_enabled == True).all()
         for service in services:
             run_evaluation(service.id, db)
     finally:
@@ -73,6 +73,10 @@ def create_tables():
             conn.execute("ALTER TABLE services ADD COLUMN base_url TEXT")
             conn.commit()
             print("[migration] Added column: services.base_url")
+        if "auto_eval_enabled" not in svc_cols:
+            conn.execute("ALTER TABLE services ADD COLUMN auto_eval_enabled INTEGER DEFAULT 1 NOT NULL")
+            conn.commit()
+            print("[migration] Added column: services.auto_eval_enabled")
 
         # ── incidents table migrations ────────────────────────────────────────
         inc_cols = {r[1] for r in conn.execute("PRAGMA table_info(incidents)").fetchall()}
@@ -93,7 +97,7 @@ def create_tables():
         print(f"[migration] Warning: {e}")
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_all_evaluations, trigger="interval", minutes=60)
+    scheduler.add_job(run_all_evaluations, trigger="cron", minute=0)
     scheduler.start()
 
 
