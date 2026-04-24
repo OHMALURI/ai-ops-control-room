@@ -40,7 +40,7 @@ export default function ServiceRegistry() {
     try {
       setModelsLoading(true);
       const r = await api.get('/services/available-models');
-      setAvailableModels(r.data);
+      setAvailableModels(r.data.filter(m => m.responsive));
     } catch (err) {
       console.error("Failed to fetch models", err);
     } finally {

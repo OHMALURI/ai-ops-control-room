@@ -10,3 +10,4 @@ python-jose
 pytest
 python-multipart
 httpx
+google-generativeai

@@ -22,7 +22,7 @@ const DATA_CLASSES = [
 ];
 
 const COMPLIANCE = [
-  "No PII Stored", "Audit Logged", "Local-First", "Zero Prompt Retention",
+  "Audit Logged", "Local-First", "Zero Prompt Retention",
 ];
 
 const POLICY_CARDS = [

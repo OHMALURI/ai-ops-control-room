@@ -102,8 +102,8 @@ def get_available_models(db: Session = Depends(get_db)):
         chat_models = sorted([
             m.id for m in models_response.data
             if ("gpt" in m.id or m.id.startswith("o1") or m.id.startswith("o3"))
-            and "vision" not in m.id and "audio" not in m.id and "realtime" not in m.id
-        ])[:15]
+            and "vision" not in m.id and "audio" not in m.id and "realtime" not in m.id and "audio" not in m.id
+        ])
     except openai.AuthenticationError:
         return [{"id": m, "responsive": False, "reason": "invalid_key"} for m in FALLBACK_MODELS]
     except Exception as e:

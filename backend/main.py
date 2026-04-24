@@ -121,7 +121,7 @@ def create_tables():
         print(f"[migration] Warning: {e}")
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_all_evaluations, trigger="cron", minute=0)
+    scheduler.add_job(run_all_evaluations, trigger="cron", minute=27)
     scheduler.start()
 
 
