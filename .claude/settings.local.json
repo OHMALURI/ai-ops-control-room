@@ -5,6 +5,7 @@
       "Bash(/c/Users/rithi/OneDrive/Desktop/Projects/ai-ops-control-room/backend/venv/Scripts/python.exe:*)",
       "Bash(./venv/Scripts/python.exe -c ':*)",
       "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(pkill -f \"uvicorn main:app\")",
       "Bash(xargs grep *)"
     ]
   }

@@ -17,7 +17,7 @@ load_dotenv()
 router = APIRouter(prefix="/drift-judge", tags=["Drift Judge"])
 
 SUPPORTED_JUDGES = {
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",
     "gpt5":   "gpt-4o",         # Latest capable OpenAI model (GPT-5 when released)
     "claude": "claude-sonnet-4-5",
 }

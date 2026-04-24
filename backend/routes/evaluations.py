@@ -11,29 +11,38 @@ try:
     from database import get_db, SessionLocal
     from models import Service, Evaluation
     from services.evaluator import (
-        run_evaluation, GOLDEN_DATASETS, DATASET_LABELS,
-        request_stop, _reset_stop_flag, EvaluationStopped,
+        run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
+    from auth import SECRET_KEY, ALGORITHM
 except ImportError:
     from ..database import get_db, SessionLocal
     from ..models import Service, Evaluation
     from ..services.evaluator import (
-        run_evaluation, GOLDEN_DATASETS, DATASET_LABELS,
-        request_stop, _reset_stop_flag, EvaluationStopped,
+        run_evaluation, request_stop, _reset_stop_flag, EvaluationStopped,
     )
+    from ..auth import SECRET_KEY, ALGORITHM
+
+def _user_id_from_token(token: Optional[str]) -> Optional[int]:
+    if not token:
+        return None
+    try:
+        from jose import jwt, JWTError
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        uid = payload.get("sub")
+        return int(uid) if uid else None
+    except Exception:
+        return None
 
 router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SSE STREAMING  — runs single_turn then multi_turn, streams all progress
+# SSE STREAMING  — streams progress events for the evaluation run
 # ─────────────────────────────────────────────────────────────────────────────
 @router.get("/run-stream/{service_id}")
-def run_evaluation_stream(service_id: int):
-    """
-    SSE endpoint — streams progress events for both single-turn and multi-turn
-    evaluations running sequentially.
-    """
+def run_evaluation_stream(service_id: int, token: Optional[str] = Query(default=None)):
+    """SSE endpoint — streams progress events while the evaluation runs."""
+    user_id = _user_id_from_token(token)
     progress_queue: queue_module.Queue = queue_module.Queue()
 
     def run_in_thread():
@@ -44,21 +53,31 @@ def run_evaluation_stream(service_id: int):
             def on_progress(event):
                 progress_queue.put(event)
 
-            for dtype in ("single_turn", "multi_turn"):
-                progress_queue.put({
-                    "step": f"section_{dtype}",
-                    "label": DATASET_LABELS[dtype],
-                    "status": "section",
-                    "section": dtype,
-                })
-                run_evaluation(service_id, db, dataset_type=dtype, on_progress=on_progress)
-
-            progress_queue.put({"step": "complete", "label": "All evaluations complete", "status": "complete"})
+            run_evaluation(service_id, db, on_progress=on_progress, user_id=user_id)
+            progress_queue.put({"step": "complete", "label": "Evaluation complete", "status": "complete"})
 
         except EvaluationStopped:
             progress_queue.put({"step": "stopped", "label": "Evaluation stopped by user", "status": "stopped"})
         except Exception as e:
             progress_queue.put({"step": "error", "label": str(e), "status": "error"})
+            try:
+                from datetime import datetime as _dt
+                try:
+                    from models import AuditLog, Service as _Service
+                except ImportError:
+                    from ..models import AuditLog, Service as _Service
+                svc = db.query(_Service).filter(_Service.id == service_id).first()
+                svc_name = svc.name if svc else f"service/{service_id}"
+                db.add(AuditLog(
+                    user_id=user_id,
+                    action="evaluation.error",
+                    resource=f"services/{service_id}",
+                    details=f"Service: {svc_name} | Error: {str(e)[:300]}",
+                    timestamp=_dt.utcnow(),
+                ))
+                db.commit()
+            except Exception:
+                pass
         finally:
             db.close()
 
@@ -73,7 +92,29 @@ def run_evaluation_stream(service_id: int):
                 if event.get("status") in ("complete", "error", "stopped"):
                     break
             except queue_module.Empty:
-                yield 'data: {"step":"timeout","label":"Evaluation timed out","status":"error"}\n\n'
+                yield 'data: {"step":"timeout","label":"Evaluation timed out (600s)","status":"error"}\n\n'
+                try:
+                    from datetime import datetime as _dt
+                    _tdb = SessionLocal()
+                    try:
+                        from models import AuditLog, Service as _Service
+                    except ImportError:
+                        from ..models import AuditLog, Service as _Service
+                    svc = _tdb.query(_Service).filter(_Service.id == service_id).first()
+                    svc_name = svc.name if svc else f"service/{service_id}"
+                    _tdb.add(AuditLog(
+                        user_id=user_id,
+                        action="evaluation.timeout",
+                        resource=f"services/{service_id}",
+                        details=f"Service: {svc_name} | Evaluation timed out after 600s",
+                        timestamp=_dt.utcnow(),
+                    ))
+                    _tdb.commit()
+                except Exception:
+                    pass
+                finally:
+                    try: _tdb.close()
+                    except Exception: pass
                 break
 
     return StreamingResponse(
@@ -101,47 +142,21 @@ def stop_evaluation(service_id: int):
 # STANDARD ROUTES
 # ─────────────────────────────────────────────────────────────────────────────
 @router.post("/run/{service_id}")
-def run_service_evaluation(
-    service_id: int,
-    dataset_type: str = Query(default="single_turn"),
-    db: Session = Depends(get_db),
-):
+def run_service_evaluation(service_id: int, db: Session = Depends(get_db)):
     service = db.query(Service).filter(Service.id == service_id).first()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-    return run_evaluation(service_id, db, dataset_type=dataset_type)
-
-
-@router.post("/run-all/{service_id}")
-def run_all_evaluations(service_id: int, db: Session = Depends(get_db)):
-    service = db.query(Service).filter(Service.id == service_id).first()
-    if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
-    results = []
-    for dtype in GOLDEN_DATASETS.keys():
-        try:
-            ev = run_evaluation(service_id, db, dataset_type=dtype)
-            results.append({"dataset_type": dtype, "id": ev.id, "quality_score": ev.quality_score})
-        except Exception as e:
-            results.append({"dataset_type": dtype, "error": str(e)})
-    return results
-
-
-@router.get("/dataset-types")
-def list_dataset_types():
-    return [{"key": k, "label": DATASET_LABELS[k]} for k in GOLDEN_DATASETS.keys()]
+    return run_evaluation(service_id, db)
 
 
 @router.get("/latest/{service_id}")
-def get_latest_evaluation(
-    service_id: int,
-    dataset_type: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
-):
-    q = db.query(Evaluation).filter(Evaluation.service_id == service_id)
-    if dataset_type:
-        q = q.filter(Evaluation.dataset_type == dataset_type)
-    evaluation = q.order_by(Evaluation.timestamp.desc()).first()
+def get_latest_evaluation(service_id: int, db: Session = Depends(get_db)):
+    evaluation = (
+        db.query(Evaluation)
+        .filter(Evaluation.service_id == service_id)
+        .order_by(Evaluation.timestamp.desc())
+        .first()
+    )
     if not evaluation:
         raise HTTPException(status_code=404, detail="No evaluations found for this service")
     return evaluation
@@ -150,10 +165,21 @@ def get_latest_evaluation(
 @router.get("/{service_id}")
 def get_service_evaluations(
     service_id: int,
-    dataset_type: Optional[str] = Query(default=None),
+    page:      int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    q = db.query(Evaluation).filter(Evaluation.service_id == service_id)
-    if dataset_type:
-        q = q.filter(Evaluation.dataset_type == dataset_type)
-    return q.order_by(Evaluation.timestamp.desc()).all()
+    q = (
+        db.query(Evaluation)
+        .filter(Evaluation.service_id == service_id)
+        .order_by(Evaluation.timestamp.desc())
+    )
+    total = q.count()
+    items = q.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "items":       items,
+        "total":       total,
+        "page":        page,
+        "page_size":   page_size,
+        "total_pages": max(1, -(-total // page_size)),
+    }

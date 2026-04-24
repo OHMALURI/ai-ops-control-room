@@ -22,6 +22,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, default="user", nullable=False)
+    force_password_reset = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationship
@@ -43,6 +44,7 @@ class Service(Base):
     system_prompt = Column(String, nullable=True)
     api_key_ref = Column(String, nullable=True)
     data_sensitivity = Column(String, nullable=False)
+    auto_eval_enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -94,8 +96,9 @@ class Incident(Base):
     severity = Column(String, nullable=False)
     symptoms = Column(String, nullable=False)
     timeline = Column(String, nullable=False)
-    status = Column(String, default="open", nullable=False)
-    llm_summary = Column(String, nullable=True)
+    status = Column(String, default="pending", nullable=False)
+    llm_summary = Column(String, nullable=True)   # incident summary set when ticket is opened
+    post_mortem = Column(String, nullable=True)   # post-mortem narrative set when ticket is closed
     approved = Column(Boolean, default=False, nullable=False)
     checklist_json = Column(String, nullable=True)   # JSON stored as string
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -150,6 +153,25 @@ class AuditLog(Base):
             f"<AuditLog id={self.id} user_id={self.user_id} "
             f"action={self.action!r} resource={self.resource!r}>"
         )
+
+
+class TempAdminGrant(Base):
+    __tablename__ = "temp_admin_grants"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=False)
+    granted_by   = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reason       = Column(String, nullable=False)
+    duration_hours = Column(Float, nullable=False)
+    expires_at   = Column(DateTime, nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+    status       = Column(String, default="pending", nullable=False)  # pending/approved/rejected
+
+    requester = relationship("User", foreign_keys=[user_id])
+    approver  = relationship("User", foreign_keys=[granted_by])
+
+    def __repr__(self):
+        return f"<TempAdminGrant id={self.id} user_id={self.user_id} status={self.status!r}>"
 
 
 class DriftJudgeResult(Base):
