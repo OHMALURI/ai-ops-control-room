@@ -500,8 +500,9 @@ export default function ServiceRegistry() {
                 <h3 className="text-lg font-bold">Delete Service?</h3>
               </div>
               <p className="text-sm text-gray-600">
-                Are you sure you want to delete <span className="font-semibold text-gray-800">{serviceToDelete.name}</span>? 
-                This action cannot be undone and will remove all associated evaluation history.
+                Are you sure you want to delete <span className="font-semibold text-gray-800">{serviceToDelete.name}</span>?
+                This will permanently remove the service and its open incidents.
+                <span className="block mt-1 text-green-700 font-medium">Evaluation history (performance logs) will be preserved.</span>
               </p>
             </div>
             <div className="bg-gray-50 px-5 py-3 flex justify-end gap-2 border-t border-gray-100">

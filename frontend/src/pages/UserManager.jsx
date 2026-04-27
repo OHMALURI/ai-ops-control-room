@@ -3,6 +3,14 @@ import api from "../api.js";
 
 const ROLES = ["admin", "maintainer", "user"];
 
+function formatDuration(hours) {
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 function validatePassword(pw) {
   if (pw.length < 8) return "Password must be at least 8 characters.";
   if (!/[A-Z]/.test(pw)) return "Password must contain at least one uppercase letter.";
@@ -52,8 +60,22 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [showPass, setShowPass] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const options = isTempAdmin ? ROLES.filter(r => r !== "admin") : ROLES;
+  const canDelete = !isSelf && user.role !== "admin";
+
+  async function handleDelete() {
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setConfirmDelete(false);
+    try {
+      await api.delete(`/auth/users/${user.id}`);
+      if (setActionMsg) setActionMsg(`User "${user.username}" deleted`);
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to delete user");
+    }
+  }
 
   async function handleSave() {
     setSaving(true); setSaved(false); setError("");
@@ -67,7 +89,7 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
       if (!isSelf && role !== user.role) payload.role = role;
       if (password.trim()) payload.password = password;
 
-      const { data } = await api.put(`/auth/users/${user.username}/update`, payload);
+      const { data } = await api.put(`/auth/users/${user.id}/update`, payload);
       setSaved(true);
       if (onSaved) onSaved();
       if (setActionMsg) setActionMsg(`Successfully updated ${user.username}`);
@@ -153,6 +175,26 @@ function UserRow({ user, onSaved, isTempAdmin, setActionMsg }) {
           >
             {saving ? "SAVING..." : saved ? "SAVED ✓" : "Update User"}
           </button>
+          {canDelete && (
+            confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-red-400 font-bold">Confirm delete?</span>
+                <button onClick={handleDelete}
+                  className="text-[10px] font-bold text-white bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-all active:scale-95">
+                  Yes, Delete
+                </button>
+                <button onClick={() => setConfirmDelete(false)}
+                  className="text-[10px] font-bold text-gray-400 hover:text-gray-200 px-3 py-1.5 rounded-lg border border-gray-700 transition-all">
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button onClick={handleDelete}
+                className="text-[10px] font-bold text-red-500 hover:text-red-400 px-4 py-1.5 rounded-lg border border-red-800/40 hover:border-red-600/60 hover:bg-red-950/20 transition-all active:scale-95 uppercase tracking-widest">
+                Delete User
+              </button>
+            )
+          )}
           {error && <div className="text-[10px] text-red-500 font-bold max-w-[150px] leading-tight">{error}</div>}
         </div>
       </td>
@@ -280,7 +322,7 @@ function AdminView({ isTempAdmin }) {
                 onChange={e => setAddForm(p => ({ ...p, role: e.target.value }))}
                 className="w-full bg-gray-800 border border-gray-700 text-gray-100 text-sm font-semibold rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none"
               >
-                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                {(isTempAdmin ? ROLES.filter(r => r !== "admin") : ROLES).map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
           </div>
@@ -381,7 +423,7 @@ function AdminView({ isTempAdmin }) {
                     <div className="min-w-0">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-white font-bold text-base tracking-tight">{g.username}</span>
-                        <span className="text-xs font-bold text-gray-500 bg-gray-800 px-2 py-1 rounded uppercase">{g.duration_hours}h REQUEST</span>
+                        <span className="text-xs font-bold text-gray-500 bg-gray-800 px-2 py-1 rounded uppercase">{formatDuration(g.duration_hours)} REQUEST</span>
                       </div>
                       <p className="text-gray-300 text-sm leading-relaxed mb-2">"{g.reason}"</p>
                       <div className="text-xs text-gray-500 font-medium">
@@ -422,17 +464,21 @@ function AdminView({ isTempAdmin }) {
                           <span className="text-gray-400">{new Date(g.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           <span className="text-gray-700">→</span>
                           <span className="text-gray-400">{new Date(g.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          <span className="ml-1 text-indigo-900/60 font-bold">({g.duration_hours}h)</span>
+                          <span className="ml-1 text-indigo-900/60 font-bold">({formatDuration(g.duration_hours)})</span>
                         </div>
                       ) : (
                         <span className="text-gray-600 text-xs font-medium">
-                          {g.duration_hours}h requested
+                          {formatDuration(g.duration_hours)} requested
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="text-[10px] text-gray-600 font-bold uppercase tracking-widest italic opacity-0 group-hover:opacity-100 transition-opacity">
-                    {g.status === "approved" ? `by ${g.granted_by || 'system'}` : g.status === "rejected" ? 'rejected' : ''}
+                  <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest italic">
+                    {g.status === "approved" && g.granted_by
+                      ? <span>Approved by <span className="text-indigo-400">{g.granted_by}</span></span>
+                      : g.status === "rejected" && g.granted_by
+                        ? <span>Rejected by <span className="text-red-400">{g.granted_by}</span></span>
+                        : null}
                   </div>
                 </div>
               ))}
@@ -626,6 +672,7 @@ function MaintainerView({ effectiveRole }) {
                       <th className="px-8 py-5">Submitted</th>
                       <th className="px-8 py-5">Reason</th>
                       <th className="px-8 py-5">Access Window</th>
+                      <th className="px-8 py-5">Actioned By</th>
                       <th className="px-8 py-5 text-right">Status</th>
                     </tr>
                   </thead>
@@ -648,12 +695,24 @@ function MaintainerView({ effectiveRole }) {
                                 <span className="text-gray-600">→</span>
                                 <span>{new Date(g.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
-                              <span className="text-[10px] text-gray-500 font-bold uppercase mt-1">{g.duration_hours < 1 ? `${Math.round(g.duration_hours * 60)}m` : `${g.duration_hours}h`} window</span>
+                              <span className="text-[10px] text-gray-500 font-bold uppercase mt-1">{formatDuration(g.duration_hours)} window</span>
                             </div>
                           ) : (
                             <div className="text-gray-500 text-sm font-medium italic">
-                              {g.duration_hours < 1 ? `${Math.round(g.duration_hours * 60)}m` : `${g.duration_hours}h`} requested
+                              {formatDuration(g.duration_hours)} requested
                             </div>
+                          )}
+                        </td>
+                        <td className="px-8 py-6 whitespace-nowrap">
+                          {g.granted_by ? (
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                {g.status === "approved" ? "Approved by" : "Rejected by"}
+                              </span>
+                              <span className="text-sm font-bold text-indigo-400">{g.granted_by}</span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-600 text-xs italic">—</span>
                           )}
                         </td>
                         <td className="px-8 py-6 text-right">

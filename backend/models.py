@@ -48,7 +48,8 @@ class Service(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    evaluations = relationship("Evaluation", back_populates="service", cascade="all, delete-orphan")
+    # passive_deletes=True: SQLAlchemy leaves evaluations in DB when service is deleted (SQLite doesn't enforce FK by default)
+    evaluations = relationship("Evaluation", back_populates="service", cascade="save-update, merge", passive_deletes=True)
     incidents = relationship("Incident", back_populates="service", cascade="all, delete-orphan")
     drift_judge_results = relationship("DriftJudgeResult", back_populates="service", cascade="all, delete-orphan")
 

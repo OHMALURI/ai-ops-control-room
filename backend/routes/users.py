@@ -71,7 +71,19 @@ class TempAccessRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/register", status_code=201)
-def register(payload: UserRegister, db: Session = Depends(get_db)):
+def register(
+    payload: UserRegister,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    eff = get_effective_role(current_user.id, db)
+    if eff != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required to create users")
+
+    # Temp admins cannot create admin accounts
+    if is_temp_admin(current_user.id, db) and payload.role == "admin":
+        raise HTTPException(status_code=403, detail="Temporary admins cannot create admin accounts")
+
     if db.query(User).filter(User.username == payload.username).first():
         raise HTTPException(status_code=400, detail="Username already taken")
     if db.query(User).filter(User.email == payload.email).first():
@@ -83,16 +95,17 @@ def register(payload: UserRegister, db: Session = Depends(get_db)):
         email=payload.email,
         password_hash=hash_password(payload.password),
         role=payload.role,
+        force_password_reset=True,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
     db.add(AuditLog(
-        user_id=user.id,
+        user_id=current_user.id,
         action="auth.user_registered",
         resource=f"auth/users/{user.id}",
-        details=f"New user registered | Username: {user.username} | Email: {user.email} | Role: {user.role}",
+        details=f"User '{user.username}' created by {current_user.username} | Role: {user.role}",
         timestamp=datetime.utcnow(),
     ))
     db.commit()
@@ -161,6 +174,31 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
     }
 
 
+class PasswordUpdate(BaseModel):
+    password: str
+
+@router.put("/me/password")
+def update_my_password(
+    payload: PasswordUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _validate_password(payload.password)
+    current_user.password_hash = hash_password(payload.password)
+    current_user.force_password_reset = False
+    db.commit()
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="auth.self_update",
+        resource=f"auth/users/{current_user.id}",
+        details=f"Password updated by {current_user.username}",
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+    return {"message": "Password updated"}
+
+
 @router.get("/users")
 def list_users(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     eff = get_effective_role(current_user.id, db)
@@ -173,14 +211,58 @@ def list_users(current_user: User = Depends(get_current_user), db: Session = Dep
     ]
 
 
-@router.put("/users/{username}/update")
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    eff = get_effective_role(current_user.id, db)
+    if eff != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    if target.role == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot be deleted")
+
+    deleted_username = target.username
+    deleted_role = target.role
+
+    # Preserve audit trail — null out user_id rather than cascade-delete
+    db.query(AuditLog).filter(AuditLog.user_id == target.id).update({"user_id": None})
+
+    # Clean up temp admin grants owned by this user, and null approver references
+    db.query(TempAdminGrant).filter(TempAdminGrant.user_id == target.id).delete()
+    db.query(TempAdminGrant).filter(TempAdminGrant.granted_by == target.id).update({"granted_by": None})
+
+    db.delete(target)
+    db.commit()
+
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="auth.user_deleted",
+        resource="auth/users",
+        details=f"User '{deleted_username}' (role: {deleted_role}) permanently deleted by {current_user.username}",
+        timestamp=datetime.utcnow(),
+    ))
+    db.commit()
+    return {"message": f"User '{deleted_username}' deleted"}
+
+
+@router.put("/users/{user_id}/update")
 def update_user(
-    username: str,
+    user_id: int,
     payload: UserUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    target = db.query(User).filter(User.username == username).first()
+    target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 

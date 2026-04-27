@@ -1,36 +1,31 @@
 import { useState, useEffect, useRef } from "react";
 
-/**
- * Animates from 0 → target over `duration` ms (ease-out cubic).
- * Re-triggers whenever `target` changes to a new non-zero value.
- */
-export default function useCountUp(target, duration = 1000) {
+export default function useCountUp(target, duration = 800) {
   const [count, setCount] = useState(0);
-  const rafRef = useRef(null);
+  const prev = useRef(0);
 
   useEffect(() => {
-    if (target == null || isNaN(target)) return;
+    const start = prev.current;
+    const end = target ?? 0;
+    if (start === end) return;
 
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    const startTime = performance.now();
+    let raf;
 
-    if (target === 0) { setCount(0); return; }
-
-    let start = null;
-
-    function step(ts) {
-      if (!start) start = ts;
-      const progress = Math.min((ts - start) / duration, 1);
-      const eased    = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-      setCount(Math.round(target * eased));
+    function step(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(start + (end - start) * eased));
       if (progress < 1) {
-        rafRef.current = requestAnimationFrame(step);
+        raf = requestAnimationFrame(step);
       } else {
-        setCount(target);
+        prev.current = end;
       }
     }
 
-    rafRef.current = requestAnimationFrame(step);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
   }, [target, duration]);
 
   return count;

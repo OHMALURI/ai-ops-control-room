@@ -1,10 +1,34 @@
-import { BrowserRouter, Route, Routes, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { BrowserRouter, Route, Routes, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, Component } from 'react';
+
+class ErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-950 p-8">
+          <div className="max-w-xl w-full bg-red-950/40 border border-red-800/50 rounded-2xl p-8">
+            <p className="text-red-400 font-black text-lg mb-2">Page crashed</p>
+            <pre className="text-red-300 text-xs whitespace-pre-wrap break-all bg-red-950/60 rounded-xl p-4">
+              {this.state.error?.message}
+              {"\n\n"}
+              {this.state.error?.stack?.split("\n").slice(0, 6).join("\n")}
+            </pre>
+            <button onClick={() => this.setState({ error: null })}
+              className="mt-4 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-sm font-bold rounded-lg">
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import api from './api';
 import NavBar from './components/NavBar';
-import PageTransition from './components/PageTransition';
 import { EvaluationProvider } from './contexts/EvaluationContext';
-import { ThemeProvider } from './contexts/ThemeContext';
 import Dashboard from './pages/Dashboard';
 import ServiceRegistry from './pages/ServiceRegistry';
 import Operations from './pages/Operations';
@@ -14,29 +38,6 @@ import UserManager from './pages/UserManager';
 import Login from './pages/Login';
 import ResetPassword from './pages/ResetPassword';
 import PerformanceLogs from './pages/PerformanceLogs';
-
-// Which transition variant each route gets
-const ROUTE_VARIANTS = {
-  "/":           "fade-up",     // Dashboard  — stats/cards rise in
-  "/dashboard":  "fade-up",
-  "/registry":   "slide-left",  // Services   — card list sweeps from left
-  "/operations": "drop",        // Operations — alerts drop from top
-  "/maintenance":"drop",
-  "/audit":      "stream",      // Audit log  — log rows stream from top edge
-  "/policy":     "slide-right", // Policy     — document slides in from right
-  "/users":      "scale-fade",  // Users      — profiles scale up from center
-  "/perf-logs":  "rise",        // Perf logs  — chart/data rises from bottom
-};
-
-function AnimatedOutlet() {
-  const location = useLocation();
-  const variant  = ROUTE_VARIANTS[location.pathname] ?? "fade-up";
-  return (
-    <PageTransition key={location.pathname} variant={variant}>
-      <Outlet />
-    </PageTransition>
-  );
-}
 
 function ProtectedLayout() {
   const token = localStorage.getItem("token");
@@ -52,7 +53,7 @@ function ProtectedLayout() {
       }).catch(() => {});
     };
     refresh();
-    const id = setInterval(refresh, 30000);
+    const id = setInterval(refresh, 30000); // re-check every 30s
     return () => clearInterval(id);
   }, [token]);
 
@@ -63,7 +64,7 @@ function ProtectedLayout() {
   return (
     <>
       <NavBar />
-      <AnimatedOutlet />
+      <Outlet />
     </>
   );
 }
@@ -71,26 +72,24 @@ function ProtectedLayout() {
 export default function App() {
   return (
     <BrowserRouter>
-      <ThemeProvider>
       <EvaluationProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/registry" element={<ServiceRegistry />} />
-          <Route path="/operations" element={<Operations />} />
-          <Route path="/maintenance" element={<Operations />} />
-          <Route path="/audit" element={<AuditLog />} />
-          <Route path="/policy" element={<DataPolicy />} />
-          <Route path="/users" element={<UserManager />} />
-          <Route path="/perf-logs" element={<PerformanceLogs />} />
+          <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+          <Route path="/dashboard" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
+          <Route path="/registry" element={<ErrorBoundary><ServiceRegistry /></ErrorBoundary>} />
+          <Route path="/operations" element={<ErrorBoundary><Operations /></ErrorBoundary>} />
+          <Route path="/maintenance" element={<ErrorBoundary><Operations /></ErrorBoundary>} />
+          <Route path="/audit" element={<ErrorBoundary><AuditLog /></ErrorBoundary>} />
+          <Route path="/policy" element={<ErrorBoundary><DataPolicy /></ErrorBoundary>} />
+          <Route path="/users" element={<ErrorBoundary><UserManager /></ErrorBoundary>} />
+          <Route path="/perf-logs" element={<ErrorBoundary><PerformanceLogs /></ErrorBoundary>} />
         </Route>
       </Routes>
       </EvaluationProvider>
-      </ThemeProvider>
     </BrowserRouter>
   );
 }

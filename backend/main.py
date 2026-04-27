@@ -121,7 +121,7 @@ def create_tables():
         print(f"[migration] Warning: {e}")
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(run_all_evaluations, trigger="cron", minute=27)
+    scheduler.add_job(run_all_evaluations, trigger="cron", minute=0)
     scheduler.start()
 
 
@@ -138,3 +138,4 @@ app.include_router(maintenance_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(governance_router, prefix="/api")
 app.include_router(drift_judge_router, prefix="/api")
+# Heartbeat reload trigger

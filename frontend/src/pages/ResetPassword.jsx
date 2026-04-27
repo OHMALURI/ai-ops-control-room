@@ -5,10 +5,10 @@ import api from "../api.js";
 export default function ResetPassword() {
   const navigate = useNavigate();
   const username = localStorage.getItem("username") || "";
-  const [password, setPassword]   = useState("");
-  const [confirm, setConfirm]     = useState("");
-  const [error, setError]         = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   function validatePassword(pw) {
     if (pw.length < 8) return "Password must be at least 8 characters.";
@@ -30,10 +30,11 @@ export default function ResetPassword() {
     }
     setLoading(true);
     try {
-      await api.put(`/auth/users/${username}/update`, { password });
-      navigate("/dashboard");
+      await api.put("/auth/me/password", { password });
+      navigate("/");
     } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to update password.");
+      const detail = err?.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0]?.msg || "Failed to update password." : detail || "Failed to update password.");
     } finally {
       setLoading(false);
     }

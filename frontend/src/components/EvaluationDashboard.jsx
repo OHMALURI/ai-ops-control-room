@@ -78,7 +78,7 @@ const ServiceCard = ({ service }) => {
       }
       try {
         const allRes = await api.get(`/evaluations/${service.id}`);
-        setAllEvals(allRes.data.items || allRes.data || []);
+        setAllEvals(Array.isArray(allRes.data) ? allRes.data : (allRes.data?.items || []));
       } catch (err) {
         if (err.response?.status === 404) setAllEvals([]);
       }
@@ -133,16 +133,14 @@ const ServiceCard = ({ service }) => {
     : 'bg-blue-100 text-blue-800 border-blue-200';
 
   const METRICS = [
-    { key: 'quality_score',    label: 'Avg Quality Score', color: '#7c3aed', desc: 'Average quality score across all categories' },
-    { key: 'accuracy',         label: 'Math',              color: '#2563eb', desc: 'Deterministic exact-match score on math questions' },
-    { key: 'relevance_score',  label: 'Reasoning',         color: '#db2777', desc: 'Step-wise logic check (Gemini rubric) on reasoning questions' },
-    { key: 'factuality_score', label: 'Knowledge',         color: '#16a34a', desc: 'Factuality score (Gemini rubric) on knowledge questions' },
-    { key: 'toxicity_score',   label: 'Security',          color: '#f97316', desc: 'Security knowledge score (Gemini rubric) on cybersecurity questions' },
+    { key: 'quality_score',   label: 'Avg Quality Score', color: '#7c3aed', desc: 'Average quality score across all categories' },
+    { key: 'accuracy',        label: 'Math',         color: '#4f46e5', desc: 'Deterministic exact-match score on math questions' },
+    { key: 'relevance_score', label: 'Reasoning',    color: '#0891b2', desc: 'Step-wise logic check (Gemini rubric) on reasoning questions' },
+    { key: 'factuality_score', label: 'Knowledge',   color: '#16a34a', desc: 'Factuality score (Gemini rubric) on knowledge questions' },
+    { key: 'toxicity_score',  label: 'Security',     color: '#d97706', desc: 'Security knowledge score (Gemini rubric) on cybersecurity questions' },
   ];
 
-  const [lockedMetric,  setLockedMetric]  = useState(null);
-  const [hoveredMetric, setHoveredMetric] = useState(null);
-  const activeMetric = lockedMetric ?? hoveredMetric ?? 'all';
+  const [activeMetric, setActiveMetric] = useState('all');
 
   const METRIC_TO_CATEGORY = {
     accuracy:         'math',
@@ -279,9 +277,8 @@ const ServiceCard = ({ service }) => {
       <div className="px-6 pt-6 pb-2">
         <div className="flex flex-wrap gap-3 mb-6">
           {METRICS.map(m => {
-            const val      = latestEval?.[m.key];
-            const isLocked  = lockedMetric === m.key;
-            const isHovered = !lockedMetric && hoveredMetric === m.key;
+            const val = latestEval?.[m.key];
+            const isActive = activeMetric === m.key;
             const color = val == null ? 'text-gray-400'
               : val >= 80 ? 'text-green-600'
               : val >= 55 ? 'text-yellow-600'
@@ -289,28 +286,16 @@ const ServiceCard = ({ service }) => {
             return (
               <button
                 key={m.key}
-                onClick={() => {
-                  setLockedMetric(isLocked ? null : m.key);
-                  setHoveredMetric(null);
-                }}
-                onMouseEnter={() => { if (!lockedMetric) setHoveredMetric(m.key); }}
-                onMouseLeave={() => { if (!lockedMetric) setHoveredMetric(null); }}
+                onClick={() => setActiveMetric(isActive ? 'all' : m.key)}
+                onMouseEnter={() => setActiveMetric(m.key)}
+                onMouseLeave={() => setActiveMetric('all')}
                 title={m.desc}
-                className={`flex-1 min-w-[140px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer relative ${
-                  isLocked
-                    ? 'border-indigo-500 bg-indigo-50 shadow-md ring-2 ring-indigo-400'
-                    : isHovered
-                    ? 'border-indigo-400 bg-indigo-50/70 shadow-sm ring-1 ring-indigo-300'
+                className={`flex-1 min-w-[140px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
+                  isActive
+                    ? 'border-indigo-400 bg-indigo-50 shadow-md ring-2 ring-indigo-300'
                     : 'bg-gray-50 border-gray-100 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/40'
                 }`}
               >
-                {isLocked && (
-                  <span className="absolute top-1.5 right-1.5 text-indigo-400" title="Locked — click to deselect">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                    </svg>
-                  </span>
-                )}
                 <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">{m.label}</p>
                 <p className={`text-lg font-bold ${color}`}>
                   {val != null ? `${val.toFixed(1)}%` : 'No data'}
@@ -319,27 +304,15 @@ const ServiceCard = ({ service }) => {
             );
           })}
           <button
-            onClick={() => {
-              setLockedMetric(lockedMetric === 'latency_ms' ? null : 'latency_ms');
-              setHoveredMetric(null);
-            }}
-            onMouseEnter={() => { if (!lockedMetric) setHoveredMetric('latency_ms'); }}
-            onMouseLeave={() => { if (!lockedMetric) setHoveredMetric(null); }}
-            className={`flex-1 min-w-[120px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer relative ${
-              lockedMetric === 'latency_ms'
-                ? 'border-indigo-500 bg-indigo-50 shadow-md ring-2 ring-indigo-400'
-                : (!lockedMetric && hoveredMetric === 'latency_ms')
-                ? 'border-indigo-400 bg-indigo-50/70 shadow-sm ring-1 ring-indigo-300'
+            onClick={() => setActiveMetric(activeMetric === 'latency_ms' ? 'all' : 'latency_ms')}
+            onMouseEnter={() => setActiveMetric('latency_ms')}
+            onMouseLeave={() => setActiveMetric('all')}
+            className={`flex-1 min-w-[120px] p-3 rounded-lg flex flex-col justify-center border text-left transition-all cursor-pointer ${
+              activeMetric === 'latency_ms'
+                ? 'border-indigo-400 bg-indigo-50 shadow-md ring-2 ring-indigo-300'
                 : 'bg-gray-50 border-gray-100 shadow-sm hover:border-indigo-200 hover:bg-indigo-50/40'
             }`}
           >
-            {lockedMetric === 'latency_ms' && (
-              <span className="absolute top-1.5 right-1.5 text-indigo-400">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                </svg>
-              </span>
-            )}
             <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider mb-1 leading-tight">Runtime</p>
             <p className="text-md font-medium text-gray-700 mt-0.5">{latency}</p>
           </button>
@@ -358,10 +331,7 @@ const ServiceCard = ({ service }) => {
                 : `${METRICS.find(m => m.key === activeMetric)?.label} Over Time`}
             </h4>
             {activeMetric !== 'all' && (
-              <button
-                onClick={() => { setLockedMetric(null); setHoveredMetric(null); }}
-                className="text-xs text-indigo-600 hover:underline"
-              >
+              <button onClick={() => setActiveMetric('all')} className="text-xs text-indigo-600 hover:underline">
                 Show all
               </button>
             )}
